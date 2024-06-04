@@ -57,7 +57,7 @@ class TwoConv(nn.Sequential):
     ):
         
         super().__init__()
-        self.temb_proj = torch.nn.Linear(128,
+        self.temb_proj = torch.nn.Linear(256,
                                          out_chns)
 
         if dim is not None:
@@ -174,7 +174,7 @@ class SelfAttention(nn.Module):
         self.to_out = nn.Linear(in_dim, in_dim)
 
     def forward(self, x):
-        B, N, C = x.shape
+        B, N, C, _, _ = x.shape
         qkv = self.to_qkv(x).chunk(3, dim=-1)
         q, k, v = map(lambda t: t.reshape(B, N, self.heads, C // self.heads).transpose(1, 2), qkv)
 
