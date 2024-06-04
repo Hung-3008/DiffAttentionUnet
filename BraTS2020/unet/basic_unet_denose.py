@@ -57,7 +57,7 @@ class TwoConv(nn.Sequential):
     ):
         
         super().__init__()
-        self.temb_proj = torch.nn.Linear(512,
+        self.temb_proj = torch.nn.Linear(128,
                                          out_chns)
 
         if dim is not None:
