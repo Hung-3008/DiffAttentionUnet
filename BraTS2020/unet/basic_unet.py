@@ -321,7 +321,7 @@ class BasicUNetEncoder(nn.Module):
         spatial_dims: int = 3,
         in_channels: int = 1,
         out_channels: int = 2,
-        features: Sequence[int] = (32, 32, 64, 128, 256, 32),
+        features: Sequence[int] = (16, 16, 32, 64, 128, 16),
         act: Union[str, tuple] = ("LeakyReLU", {"negative_slope": 0.1, "inplace": True}),
         norm: Union[str, tuple] = ("instance", {"affine": True}),
         bias: bool = True,

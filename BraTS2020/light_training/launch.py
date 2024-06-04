@@ -86,8 +86,8 @@ def launch_dist(
             sys.executable,
             # "python",
             '-m', 
-            # "torchrun"
-            'torch.distributed.launch'
+            "torchrun"
+            #'torch.distributed.launch'
         ])
         torch_distributed_args = [
             '--nproc_per_node',
