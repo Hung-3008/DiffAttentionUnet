@@ -144,7 +144,7 @@ class Args:
         self.fold=0
         self.batch_size=2
 
-def get_loader_brats(data_dir, batch_size=1, fold=0, num_workers=4):
+def get_loader_brats(data_dir, batch_size=1, fold=0, num_workers=8):
 
     all_dirs = os.listdir(data_dir)
     all_paths = [os.path.join(data_dir, d) for d in all_dirs]
@@ -163,9 +163,9 @@ def get_loader_brats(data_dir, batch_size=1, fold=0, num_workers=4):
             transforms.ConvertToMultiChannelBasedOnBratsClassesD(keys=["label"]),
             transforms.CropForegroundd(keys=["image", "label"], source_key="image"),
 
-            transforms.RandSpatialCropd(keys=["image", "label"], roi_size=[24, 24, 24],
+            transforms.RandSpatialCropd(keys=["image", "label"], roi_size=[96, 96, 96],
                                         random_size=False),
-            transforms.SpatialPadd(keys=["image", "label"], spatial_size=(24, 24, 24)),
+            transforms.SpatialPadd(keys=["image", "label"], spatial_size=(96, 96, 96)),
             transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=0),
             transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=1),
             transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=2),

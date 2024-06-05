@@ -19,17 +19,17 @@ from guided_diffusion.resample import UniformSampler
 set_determinism(123)
 import os
 
-data_dir = "./data/brats/training"
-logdir = "./logs"
+data_dir = "./datasets/brats2020/MICCAI_BraTS2020_TrainingData/"
+logdir = "./logs_brats/diffusion_seg_all_loss_embed/"
 
 model_save_path = os.path.join(logdir, "model")
 
-#env = "DDP" # or env = "pytorch" if you only have one gpu.
-env = "pytorch"
+env = "DDP" # or env = "pytorch" if you only have one gpu.
+
 max_epoch = 300
 batch_size = 2
 val_every = 10
-num_gpus = 0
+num_gpus = 4
 device = "cuda:0"
 
 number_modality = 4
@@ -38,9 +38,9 @@ number_targets = 3 ## WT, TC, ET
 class DiffUNet(nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.embed_model = BasicUNetEncoder(3, number_modality, number_targets, [16, 16, 32, 64, 128, 16])
+        self.embed_model = BasicUNetEncoder(3, number_modality, number_targets, [32, 32, 64, 128, 256, 32])
 
-        self.model = BasicUNetDe(3, number_modality + number_targets, number_targets, [16, 16, 32, 64, 128, 16], 
+        self.model = BasicUNetDe(3, number_modality + number_targets, number_targets, [32, 32, 64, 128, 256, 32], 
                                 act = ("LeakyReLU", {"negative_slope": 0.1, "inplace": False}))
    
         betas = get_named_beta_schedule("linear", 1000)
@@ -73,14 +73,14 @@ class DiffUNet(nn.Module):
         elif pred_type == "ddim_sample":
             embeddings = self.embed_model(image)
 
-            sample_out = self.sample_diffusion.ddim_sample_loop(self.model, (1, number_targets, 24, 24, 24), model_kwargs={"image": image, "embeddings": embeddings})
+            sample_out = self.sample_diffusion.ddim_sample_loop(self.model, (1, number_targets, 96, 96, 96), model_kwargs={"image": image, "embeddings": embeddings})
             sample_out = sample_out["pred_xstart"]
             return sample_out
 
 class BraTSTrainer(Trainer):
     def __init__(self, env_type, max_epochs, batch_size, device="cpu", val_every=1, num_gpus=1, logdir="./logs/", master_ip='localhost', master_port=17750, training_script="train.py"):
         super().__init__(env_type, max_epochs, batch_size, device, val_every, num_gpus, logdir, master_ip, master_port, training_script)
-        self.window_infer = SlidingWindowInferer(roi_size=[24, 24, 24],
+        self.window_infer = SlidingWindowInferer(roi_size=[96, 96, 96],
                                         sw_batch_size=1,
                                         overlap=0.25)
         self.model = DiffUNet()
