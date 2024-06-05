@@ -57,7 +57,7 @@ class TwoConv(nn.Sequential):
     ):
         
         super().__init__()
-        self.temb_proj = torch.nn.Linear(256,
+        self.temb_proj = torch.nn.Linear(64,
                                          out_chns)
 
         if dim is not None:
@@ -213,8 +213,8 @@ class BasicUNetDe(nn.Module):
         # timestep embedding
         self.temb = nn.Module()
         self.temb.dense = nn.ModuleList([
-            torch.nn.Linear(128, 256),
-            torch.nn.Linear(256, 256),
+            torch.nn.Linear(32, 64),
+            torch.nn.Linear(64, 64),
         ])
 
         self.conv_0 = TwoConv(spatial_dims, in_channels, features[0], act, norm, bias, dropout)
