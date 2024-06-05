@@ -311,17 +311,45 @@ class BasicUNet(nn.Module):
 
 BasicUnet = Basicunet = basicunet = BasicUNet
 
+class AttentionGate(nn.Module):
+    def __init__(self, F_g, F_l, F_int):
+        super(AttentionGate, self).__init__()
+        
+        self.W_g = nn.Sequential(
+            nn.Conv3d(F_g, F_int, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.BatchNorm3d(F_int)
+        )
+        
+        self.W_x = nn.Sequential(
+            nn.Conv3d(F_l, F_int, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.BatchNorm3d(F_int)
+        )
+
+        self.psi = nn.Sequential(
+            nn.Conv3d(F_int, 1, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.BatchNorm3d(1),
+            nn.Sigmoid()
+        )
+
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, g, x):
+        g1 = self.W_g(g)
+        x1 = self.W_x(x)
+        psi = self.relu(g1 + x1)
+        psi = self.psi(psi)
+
+        return x * psi
+    
+
 
 class BasicUNetEncoder(nn.Module):
-    @deprecated_arg(
-        name="dimensions", new_name="spatial_dims", since="0.6", msg_suffix="Please use `spatial_dims` instead."
-    )
     def __init__(
         self,
         spatial_dims: int = 3,
         in_channels: int = 1,
         out_channels: int = 2,
-        features: Sequence[int] = (16, 16, 32, 64, 128, 16),  # Reduced feature sizes by half
+        features: Sequence[int] = (16, 16, 32, 64, 128, 16),
         act: Union[str, tuple] = ("LeakyReLU", {"negative_slope": 0.1, "inplace": True}),
         norm: Union[str, tuple] = ("instance", {"affine": True}),
         bias: bool = True,
@@ -342,12 +370,24 @@ class BasicUNetEncoder(nn.Module):
         self.down_3 = Down(spatial_dims, fea[2], fea[3], act, norm, bias, dropout)
         self.down_4 = Down(spatial_dims, fea[3], fea[4], act, norm, bias, dropout)
 
+        # Attention gates
+        self.att1 = AttentionGate(F_g=fea[1], F_l=fea[2], F_int=fea[1])
+        self.att2 = AttentionGate(F_g=fea[2], F_l=fea[3], F_int=fea[2])
+        self.att3 = AttentionGate(F_g=fea[3], F_l=fea[4], F_int=fea[3])
+        self.att4 = AttentionGate(F_g=fea[4], F_l=fea[5], F_int=fea[4])
+
     def forward(self, x: torch.Tensor):
         x0 = self.conv_0(x)
         x1 = self.down_1(x0)
         x2 = self.down_2(x1)
         x3 = self.down_3(x2)
         x4 = self.down_4(x3)
+
+        # Apply attention gates
+        x1 = self.att1(g=x1, x=x2)
+        x2 = self.att2(g=x2, x=x3)
+        x3 = self.att3(g=x3, x=x4)
+        x4 = self.att4(g=x4, x=self.up_5(x4))
 
         return [x0, x1, x2, x3, x4]
         
