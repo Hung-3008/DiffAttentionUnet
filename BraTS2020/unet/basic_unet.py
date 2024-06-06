@@ -146,7 +146,7 @@ class BasicUNet(nn.Module):
         spatial_dims: int = 3,
         in_channels: int = 1,
         out_channels: int = 2,
-        features: Sequence[int] = (32, 32, 64, 128, 256, 32),
+        features: Sequence[int] = (64, 64, 128, 256, 512, 64),
         act: Union[str, tuple] = ("LeakyReLU", {"negative_slope": 0.1, "inplace": True}),
         norm: Union[str, tuple] = ("instance", {"affine": True}),
         bias: bool = True,
@@ -209,9 +209,9 @@ class SelfAttention(nn.Module):
     def __init__(self, in_channels, spatial_dims):
         super(SelfAttention, self).__init__()
         self.spatial_dims = spatial_dims
-        self.query_conv = nn.Conv3d(in_channels, in_channels // 8, 1)
-        self.key_conv = nn.Conv3d(in_channels, in_channels // 8, 1)
-        self.value_conv = nn.Conv3d(in_channels, in_channels, 1)
+        self.query_conv = nn.Conv3d(in_channels, in_channels // 16, 1)
+        self.key_conv = nn.Conv3d(in_channels, in_channels // 16, 1)
+        self.value_conv = nn.Conv3d(in_channels, in_channels, 2)
         self.gamma = nn.Parameter(torch.zeros(1))
 
     def forward(self, x):
@@ -235,7 +235,7 @@ class BasicUNetEncoder(nn.Module):
         spatial_dims: int = 3,
         in_channels: int = 1,
         out_channels: int = 2,
-        features: Sequence[int] = (32, 32, 64, 128, 256, 32),
+        features: Sequence[int] = (64, 64, 128, 256, 512, 64),
         act: Union[str, tuple] = ("LeakyReLU", {"negative_slope": 0.1, "inplace": True}),
         norm: Union[str, tuple] = ("instance", {"affine": True}),
         bias: bool = True,

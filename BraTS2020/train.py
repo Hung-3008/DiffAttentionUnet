@@ -39,9 +39,9 @@ number_targets = 3 ## WT, TC, ET
 class DiffUNet(nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.embed_model = BasicUNetEncoder(3, number_modality, number_targets, [32, 32, 64, 128, 256, 32])
+        self.embed_model = BasicUNetEncoder(3, number_modality, number_targets, [64, 64, 128, 256, 512, 64])
 
-        self.model = BasicUNetDe(3, number_modality + number_targets, number_targets, [32, 32, 64, 128, 256, 32], 
+        self.model = BasicUNetDe(3, number_modality + number_targets, number_targets, [64, 64, 128, 256, 512, 64], 
                                 act = ("LeakyReLU", {"negative_slope": 0.1, "inplace": False}))
    
         betas = get_named_beta_schedule("linear", 1000)
@@ -81,7 +81,7 @@ class DiffUNet(nn.Module):
 class BraTSTrainer(Trainer):
     def __init__(self, env_type, max_epochs, batch_size, device="cpu", val_every=1, num_gpus=1, logdir="./logs/", master_ip='localhost', master_port=17750, training_script="train.py"):
         super().__init__(env_type, max_epochs, batch_size, device, val_every, num_gpus, logdir, master_ip, master_port, training_script)
-        self.window_infer = SlidingWindowInferer(roi_size=[48, 48, 48],
+        self.window_infer = SlidingWindowInferer(roi_size=[96, 96, 96],
                                         sw_batch_size=1,
                                         overlap=0.25)
         self.model = DiffUNet()
