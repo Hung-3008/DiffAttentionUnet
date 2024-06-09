@@ -209,9 +209,9 @@ class SelfAttention(nn.Module):
     def __init__(self, in_channels, spatial_dims):
         super(SelfAttention, self).__init__()
         self.spatial_dims = spatial_dims
-        self.query_conv = nn.Conv3d(in_channels, in_channels // 16, 1)
-        self.key_conv = nn.Conv3d(in_channels, in_channels // 16, 1)
-        self.value_conv = nn.Conv3d(in_channels, in_channels, 2)
+        self.query_conv = nn.Conv3d(in_channels, in_channels // 32, 1)
+        self.key_conv = nn.Conv3d(in_channels, in_channels // 32, 1)
+        self.value_conv = nn.Conv3d(in_channels, in_channels, 4)
         self.gamma = nn.Parameter(torch.zeros(1))
 
     def forward(self, x):
