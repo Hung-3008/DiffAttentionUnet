@@ -28,7 +28,7 @@ model_save_path = os.path.join(logdir, "model")
 env = "pytorch"
 
 max_epoch = 300
-batch_size = 2
+batch_size = 1
 val_every = 10
 num_gpus = 1
 device = "cuda:0"
@@ -173,17 +173,6 @@ class BraTSTrainer(Trainer):
         print(f"wt is {wt}, tc is {tc}, et is {et}, mean_dice is {mean_dice}")
 
 if __name__ == "__main__":
-
-    # Create the parser
-    parser = argparse.ArgumentParser(description='Process some integers.')
-
-    # Add the arguments
-    parser.add_argument('--resume', action='store_true', help='Resume training from checkpoint')
-    parser.add_argument('--checkpoint_dir', type=str, help='The directory of the checkpoint')
-
-    # Parse the arguments
-    args = parser.parse_args()
-
     train_ds, val_ds, test_ds = get_loader_brats(data_dir=data_dir, batch_size=batch_size, fold=0)
     
     trainer = BraTSTrainer(env_type=env,
@@ -195,8 +184,6 @@ if __name__ == "__main__":
                             num_gpus=num_gpus,
                             master_port=17751,
                             training_script=__file__)
-    if args.resume:
-        trainer.load_state_dict(args.checkpoint_dir)
     
 
     trainer.train(train_dataset=train_ds, val_dataset=val_ds)

@@ -209,9 +209,10 @@ class SelfAttention(nn.Module):
     def __init__(self, in_channels, spatial_dims):
         super(SelfAttention, self).__init__()
         self.spatial_dims = spatial_dims
+        # Giảm số kênh của query, key và value
         self.query_conv = nn.Conv3d(in_channels, in_channels // 32, 1)
         self.key_conv = nn.Conv3d(in_channels, in_channels // 32, 1)
-        self.value_conv = nn.Conv3d(in_channels, in_channels, 4)
+        self.value_conv = nn.Conv3d(in_channels, in_channels // 4, 1)
         self.gamma = nn.Parameter(torch.zeros(1))
 
     def forward(self, x):
@@ -222,20 +223,17 @@ class SelfAttention(nn.Module):
         attention = F.softmax(energy, dim=-1)
         value = self.value_conv(x).view(batch_size, -1, depth * height * width)
         out = torch.bmm(value, attention.permute(0, 2, 1))
-        out = out.view(batch_size, C, depth, height, width)
+        out = out.view(batch_size, C // 2, depth, height, width)
         out = self.gamma * out + x
         return out
 
 class BasicUNetEncoder(nn.Module):
-    @deprecated_arg(
-        name="dimensions", new_name="spatial_dims", since="0.6", msg_suffix="Please use `spatial_dims` instead."
-    )
     def __init__(
         self,
         spatial_dims: int = 3,
         in_channels: int = 1,
         out_channels: int = 2,
-        features: Sequence[int] = (64, 64, 128, 256, 512, 64),
+        features: Sequence[int] = (16, 16, 32, 64, 128, 16),  # Giảm số lượng kênh đầu ra
         act: Union[str, tuple] = ("LeakyReLU", {"negative_slope": 0.1, "inplace": True}),
         norm: Union[str, tuple] = ("instance", {"affine": True}),
         bias: bool = True,
