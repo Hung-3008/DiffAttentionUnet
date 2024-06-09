@@ -27,7 +27,7 @@ model_save_path = os.path.join(logdir, "model")
 #env = "DDP" # or env = "pytorch" if you only have one gpu.
 env = "pytorch"
 
-max_epoch = 150
+max_epoch = 300
 batch_size = 1
 val_every = 10
 num_gpus = 1
