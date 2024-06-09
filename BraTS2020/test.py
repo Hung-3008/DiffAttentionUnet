@@ -146,6 +146,9 @@ class BraTSTrainer(Trainer):
 if __name__ == "__main__":
 
     train_ds, val_ds, test_ds = get_loader_brats(data_dir=data_dir, batch_size=batch_size, fold=0)
+
+
+    
     
     trainer = BraTSTrainer(env_type="pytorch",
                                     max_epochs=max_epoch,
