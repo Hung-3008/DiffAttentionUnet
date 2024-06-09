@@ -144,7 +144,7 @@ class Args:
         self.fold=0
         self.batch_size=2
 
-def get_loader_brats(data_dir, batch_size=1, fold=0, num_workers=4):
+def get_loader_brats(data_dir, batch_size=1, fold=0, num_workers=8):
 
     all_dirs = os.listdir(data_dir)
     all_paths = [os.path.join(data_dir, d) for d in all_dirs]

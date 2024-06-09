@@ -27,7 +27,7 @@ model_save_path = os.path.join(logdir, "model")
 #env = "DDP" # or env = "pytorch" if you only have one gpu.
 env = "pytorch"
 
-max_epoch = 300
+max_epoch = 150
 batch_size = 1
 val_every = 10
 num_gpus = 1
@@ -173,6 +173,7 @@ class BraTSTrainer(Trainer):
         print(f"wt is {wt}, tc is {tc}, et is {et}, mean_dice is {mean_dice}")
 
 if __name__ == "__main__":
+
     train_ds, val_ds, test_ds = get_loader_brats(data_dir=data_dir, batch_size=batch_size, fold=0)
     
     trainer = BraTSTrainer(env_type=env,
@@ -184,6 +185,5 @@ if __name__ == "__main__":
                             num_gpus=num_gpus,
                             master_port=17751,
                             training_script=__file__)
-    
 
     trainer.train(train_dataset=train_ds, val_dataset=val_ds)
