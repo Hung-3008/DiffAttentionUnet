@@ -201,25 +201,25 @@ class BasicUNet(nn.Module):
 
 BasicUnet = Basicunet = basicunet = BasicUNet
 
-class SelfAttention(nn.Module):
-    def __init__(self, in_channels):
-        super(SelfAttention, self).__init__()
-        self.query_conv = nn.Conv3d(in_channels=in_channels, out_channels=in_channels//8, kernel_size=1)
-        self.key_conv = nn.Conv3d(in_channels=in_channels, out_channels=in_channels//8, kernel_size=1)
-        self.value_conv = nn.Conv3d(in_channels=in_channels, out_channels=in_channels, kernel_size=1)
-        self.gamma = nn.Parameter(torch.zeros(1))
+# class SelfAttention(nn.Module):
+#     def __init__(self, in_channels):
+#         super(SelfAttention, self).__init__()
+#         self.query_conv = nn.Conv3d(in_channels=in_channels, out_channels=in_channels//8, kernel_size=1)
+#         self.key_conv = nn.Conv3d(in_channels=in_channels, out_channels=in_channels//8, kernel_size=1)
+#         self.value_conv = nn.Conv3d(in_channels=in_channels, out_channels=in_channels, kernel_size=1)
+#         self.gamma = nn.Parameter(torch.zeros(1))
 
-    def forward(self, x):
-        batch_size, C, width, height, depth = x.size()
-        query = self.query_conv(x).view(batch_size, -1, width * height * depth).permute(0, 2, 1) 
-        key = self.key_conv(x).view(batch_size, -1, width * height * depth)
-        energy = torch.bmm(query, key)
-        attention = F.softmax(energy, dim=-1)
-        value = self.value_conv(x).view(batch_size, -1, width * height * depth)
-        out = torch.bmm(value, attention.permute(0, 2, 1))
-        out = out.view(batch_size, C, width, height, depth)
-        out = self.gamma * out + x
-        return out
+#     def forward(self, x):
+#         batch_size, C, width, height, depth = x.size()
+#         query = self.query_conv(x).view(batch_size, -1, width * height * depth).permute(0, 2, 1) 
+#         key = self.key_conv(x).view(batch_size, -1, width * height * depth)
+#         energy = torch.bmm(query, key)
+#         attention = F.softmax(energy, dim=-1)
+#         value = self.value_conv(x).view(batch_size, -1, width * height * depth)
+#         out = torch.bmm(value, attention.permute(0, 2, 1))
+#         out = out.view(batch_size, C, width, height, depth)
+#         out = self.gamma * out + x
+#         return out
     
 
 class SelfAttention(nn.Module):
@@ -267,13 +267,13 @@ class BasicUNetEncoder(nn.Module):
 
         self.conv_0 = TwoConv(spatial_dims, in_channels, features[0], act, norm, bias, dropout)
         self.down_1 = Down(spatial_dims, fea[0], fea[1], act, norm, bias, dropout)
-        self.self_attention_1 = SelfAttention(fea[1], num_heads=1)
+        self.self_attention_1 = SelfAttention(fea[1])
         self.down_2 = Down(spatial_dims, fea[1], fea[2], act, norm, bias, dropout)
-        self.self_attention_2 = SelfAttention(fea[2], num_heads=1)
+        self.self_attention_2 = SelfAttention(fea[2])
         self.down_3 = Down(spatial_dims, fea[2], fea[3], act, norm, bias, dropout)
-        self.self_attention_3 = SelfAttention(fea[3], num_heads=1)
+        self.self_attention_3 = SelfAttention(fea[3])
         self.down_4 = Down(spatial_dims, fea[3], fea[4], act, norm, bias, dropout)
-        self.self_attention_4 = SelfAttention(fea[4], num_heads=1)
+        self.self_attention_4 = SelfAttention(fea[4])
 
     def forward(self, x: torch.Tensor):
             
