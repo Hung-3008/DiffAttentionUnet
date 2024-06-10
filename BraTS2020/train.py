@@ -175,15 +175,27 @@ class BraTSTrainer(Trainer):
 if __name__ == "__main__":
 
     train_ds, val_ds, test_ds = get_loader_brats(data_dir=data_dir, batch_size=batch_size, fold=0)
-    
+    # create parser with two arguments --resume and --checkpoint_dir
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--checkpoint_dir", type=str)
+
+    args = parser.parse_args()
+
     trainer = BraTSTrainer(env_type=env,
-                            max_epochs=max_epoch,
-                            batch_size=batch_size,
-                            device=device,
-                            logdir=logdir,
-                            val_every=val_every,
-                            num_gpus=num_gpus,
-                            master_port=17751,
-                            training_script=__file__)
+                                max_epochs=max_epoch,
+                                batch_size=batch_size,
+                                device=device,
+                                logdir=logdir,
+                                val_every=val_every,
+                                num_gpus=num_gpus,
+                                master_port=17751,
+                                training_script=__file__)
+
+    if args.resume:
+        checkpoint = os.path.join(args.checkpoint_dir)
+        trainer.load_state_dict(checkpoint)
+        print(f"Resume from {checkpoint}")
+
 
     trainer.train(train_dataset=train_ds, val_dataset=val_ds)
