@@ -205,31 +205,24 @@ class BasicUNet(nn.Module):
 
 BasicUnet = Basicunet = basicunet = BasicUNet
 
-class SelfAttention(nn.Module):
-    def __init__(self, in_channels, spatial_dims):
-        super(SelfAttention, self).__init__()
-        self.spatial_dims = spatial_dims
-        self.query_conv = nn.Conv3d(in_channels, in_channels // 32, 1)
-        self.key_conv = nn.Conv3d(in_channels, in_channels // 32, 1)
-        self.value_conv = nn.Conv3d(in_channels, in_channels, 4)
-        self.gamma = nn.Parameter(torch.zeros(1))
+class SEBlock(nn.Module):
+    def __init__(self, in_channels, reduction=16):
+        super(SEBlock, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool3d(1)
+        self.fc = nn.Sequential(
+            nn.Linear(in_channels, in_channels // reduction),
+            nn.ReLU(inplace=True),
+            nn.Linear(in_channels // reduction, in_channels),
+            nn.Sigmoid()
+        )
 
     def forward(self, x):
-        batch_size, C, depth, height, width = x.size()
-        query = self.query_conv(x).view(batch_size, -1, depth * height * width).permute(0, 2, 1)
-        key = self.key_conv(x).view(batch_size, -1, depth * height * width)
-        energy = torch.bmm(query, key)
-        attention = F.softmax(energy, dim=-1)
-        value = self.value_conv(x).view(batch_size, -1, depth * height * width)
-        out = torch.bmm(value, attention.permute(0, 2, 1))
-        out = out.view(batch_size, C, depth, height, width)
-        out = self.gamma * out + x
-        return out
+        b, c, _, _, _ = x.size()
+        y = self.avg_pool(x).view(b, c)
+        y = self.fc(y).view(b, c, 1, 1, 1)
+        return x * y.expand_as(x)
 
 class BasicUNetEncoder(nn.Module):
-    @deprecated_arg(
-        name="dimensions", new_name="spatial_dims", since="0.6", msg_suffix="Please use `spatial_dims` instead."
-    )
     def __init__(
         self,
         spatial_dims: int = 3,
@@ -251,15 +244,15 @@ class BasicUNetEncoder(nn.Module):
         print(f"BasicUNet features: {fea}.")
 
         self.conv_0 = TwoConv(spatial_dims, in_channels, features[0], act, norm, bias, dropout)
-        self.att_0 = SelfAttention(features[0], spatial_dims)
+        self.att_0 = SEBlock(features[0])
         self.down_1 = Down(spatial_dims, fea[0], fea[1], act, norm, bias, dropout)
-        self.att_1 = SelfAttention(fea[1], spatial_dims)
+        self.att_1 = SEBlock(fea[1])
         self.down_2 = Down(spatial_dims, fea[1], fea[2], act, norm, bias, dropout)
-        self.att_2 = SelfAttention(fea[2], spatial_dims)
+        self.att_2 = SEBlock(fea[2])
         self.down_3 = Down(spatial_dims, fea[2], fea[3], act, norm, bias, dropout)
-        self.att_3 = SelfAttention(fea[3], spatial_dims)
+        self.att_3 = SEBlock(fea[3])
         self.down_4 = Down(spatial_dims, fea[3], fea[4], act, norm, bias, dropout)
-        self.att_4 = SelfAttention(fea[4], spatial_dims)
+        self.att_4 = SEBlock(fea[4])
 
     def forward(self, x: torch.Tensor):
         x0 = self.conv_0(x)
