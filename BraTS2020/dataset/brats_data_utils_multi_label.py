@@ -110,7 +110,7 @@ class PretrainDataset(Dataset):
                 image = self.read_data(self.datalist[i])
             except:
                 with open("./bugs.txt", "a+") as f:
-                    f.write(f"数据读取出现问题，{self.datalist[i]}\n")
+                    f.write(f"数据读取出现问题，{self.datalist[i]}")
                 if i != len(self.datalist)-1:
                     return self.__getitem__(i+1)
                 else :
