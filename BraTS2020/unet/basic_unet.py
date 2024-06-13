@@ -13,19 +13,17 @@ from typing import Optional, Sequence, Union
 
 import torch
 import torch.nn as nn
+from torch.utils.checkpoint import checkpoint
+from torch.utils.checkpoint import checkpoint_sequential
 
 from monai.networks.blocks import Convolution, UpSample
 from monai.networks.layers.factories import Conv, Pool
 from monai.utils import deprecated_arg, ensure_tuple_rep
-import torch.nn.functional as F
-import torch.nn as nn
-
 
 __all__ = ["BasicUnet", "Basicunet", "basicunet", "BasicUNet"]
 
 
 class TwoConv(nn.Sequential):
-
 
     @deprecated_arg(name="dim", new_name="spatial_dims", since="0.6", msg_suffix="Please use `spatial_dims` instead.")
     def __init__(
@@ -53,7 +51,6 @@ class TwoConv(nn.Sequential):
 
 
 class Down(nn.Sequential):
-    
 
     @deprecated_arg(name="dim", new_name="spatial_dims", since="0.6", msg_suffix="Please use `spatial_dims` instead.")
     def __init__(
@@ -78,7 +75,6 @@ class Down(nn.Sequential):
 
 
 class UpCat(nn.Module):
-    
 
     @deprecated_arg(name="dim", new_name="spatial_dims", since="0.6", msg_suffix="Please use `spatial_dims` instead.")
     def __init__(
@@ -146,7 +142,7 @@ class BasicUNet(nn.Module):
         spatial_dims: int = 3,
         in_channels: int = 1,
         out_channels: int = 2,
-        features: Sequence[int] = (64, 64, 128, 256, 512, 64),
+        features: Sequence[int] = (32, 32, 64, 128, 256, 32),
         act: Union[str, tuple] = ("LeakyReLU", {"negative_slope": 0.1, "inplace": True}),
         norm: Union[str, tuple] = ("instance", {"affine": True}),
         bias: bool = True,
@@ -176,7 +172,7 @@ class BasicUNet(nn.Module):
         self.final_conv = Conv["conv", spatial_dims](fea[5], out_channels, kernel_size=1)
 
     def forward(self, x: torch.Tensor):
-       
+        
         embeddings = []
 
         x0 = self.conv_0(x)
@@ -205,37 +201,41 @@ class BasicUNet(nn.Module):
 
 BasicUnet = Basicunet = basicunet = BasicUNet
 
-class SelfAttention(nn.Module):
-    def __init__(self, in_channels, spatial_dims):
-        super(SelfAttention, self).__init__()
-        self.spatial_dims = spatial_dims
-        self.query_conv = nn.Conv3d(in_channels, in_channels // 16, 1)
-        self.key_conv = nn.Conv3d(in_channels, in_channels // 16, 1)
-        self.value_conv = nn.Conv3d(in_channels, in_channels, 2)
-        self.gamma = nn.Parameter(torch.zeros(1))
+
+class LinearAttention3D(nn.Module):
+    def __init__(self, dim, heads=8, dim_head=64):
+        super().__init__()
+        inner_dim = dim_head * heads
+        self.heads = heads
+        self.scale = dim_head ** -0.5
+
+        self.to_qkv = nn.Conv3d(dim, inner_dim * 3, 1, bias=False)
+
+        self.to_out = nn.Sequential(
+            nn.Conv3d(inner_dim, dim, 1),
+            nn.BatchNorm3d(dim)
+        )
 
     def forward(self, x):
-        batch_size, C, depth, height, width = x.size()
-        query = self.query_conv(x).view(batch_size, -1, depth * height * width).permute(0, 2, 1)
-        key = self.key_conv(x).view(batch_size, -1, depth * height * width)
-        energy = torch.bmm(query, key)
-        attention = F.softmax(energy, dim=-1)
-        value = self.value_conv(x).view(batch_size, -1, depth * height * width)
-        out = torch.bmm(value, attention.permute(0, 2, 1))
-        out = out.view(batch_size, C, depth, height, width)
-        out = self.gamma * out + x
-        return out
+        b, c, d, h, w = x.shape
+        qkv = self.to_qkv(x).chunk(3, dim=1)
+        q, k, v = map(lambda t: t.reshape(b, self.heads, -1, d * h * w), qkv)
+
+        q = q * self.scale
+        sim = torch.einsum('bhid,bhjd->bhij', q, k)
+        sim = sim.softmax(dim=-1)
+
+        out = torch.einsum('bhij,bhjd->bhid', sim, v)
+        out = out.reshape(b, -1, d, h, w)
+        return self.to_out(out)
 
 class BasicUNetEncoder(nn.Module):
-    @deprecated_arg(
-        name="dimensions", new_name="spatial_dims", since="0.6", msg_suffix="Please use `spatial_dims` instead."
-    )
     def __init__(
         self,
         spatial_dims: int = 3,
         in_channels: int = 1,
         out_channels: int = 2,
-        features: Sequence[int] = (64, 64, 128, 256, 512, 64),
+        features: Sequence[int] = (32, 32, 64, 128, 256, 32),
         act: Union[str, tuple] = ("LeakyReLU", {"negative_slope": 0.1, "inplace": True}),
         norm: Union[str, tuple] = ("instance", {"affine": True}),
         bias: bool = True,
@@ -251,26 +251,24 @@ class BasicUNetEncoder(nn.Module):
         print(f"BasicUNet features: {fea}.")
 
         self.conv_0 = TwoConv(spatial_dims, in_channels, features[0], act, norm, bias, dropout)
-        self.att_0 = SelfAttention(features[0], spatial_dims)
         self.down_1 = Down(spatial_dims, fea[0], fea[1], act, norm, bias, dropout)
-        self.att_1 = SelfAttention(fea[1], spatial_dims)
+        self.attn_1 = LinearAttention3D(fea[1])
         self.down_2 = Down(spatial_dims, fea[1], fea[2], act, norm, bias, dropout)
-        self.att_2 = SelfAttention(fea[2], spatial_dims)
+        self.attn_2 = LinearAttention3D(fea[2])
         self.down_3 = Down(spatial_dims, fea[2], fea[3], act, norm, bias, dropout)
-        self.att_3 = SelfAttention(fea[3], spatial_dims)
+        self.attn_3 = LinearAttention3D(fea[3])
         self.down_4 = Down(spatial_dims, fea[3], fea[4], act, norm, bias, dropout)
-        self.att_4 = SelfAttention(fea[4], spatial_dims)
+        self.attn_4 = LinearAttention3D(fea[4])
 
     def forward(self, x: torch.Tensor):
         x0 = self.conv_0(x)
-        x0 = self.att_0(x0)
         x1 = self.down_1(x0)
-        x1 = self.att_1(x1)
+        x1 = self.attn_1(x1)
         x2 = self.down_2(x1)
-        x2 = self.att_2(x2)
+        x2 = self.attn_2(x2)
         x3 = self.down_3(x2)
-        x3 = self.att_3(x3)
+        x3 = self.attn_3(x3)
         x4 = self.down_4(x3)
-        x4 = self.att_4(x4)
+        x4 = self.attn_4(x4)
 
         return [x0, x1, x2, x3, x4]
