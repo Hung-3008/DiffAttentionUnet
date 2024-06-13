@@ -20,6 +20,8 @@ from monai.networks.blocks import Convolution, UpSample
 from monai.networks.layers.factories import Conv, Pool
 from monai.utils import deprecated_arg, ensure_tuple_rep
 
+from dual_domain_net import ContentBranch, SpatialBranch, MergeLayer, SegmentHead
+
 __all__ = ["BasicUnet", "Basicunet", "basicunet", "BasicUNet"]
 
 
@@ -229,6 +231,44 @@ class LinearAttention3D(nn.Module):
         out = out.reshape(b, -1, d, h, w)
         return self.to_out(out)
 
+
+class DD3D(nn.Module):
+    def __init__(self, dim, heads=8, dim_head=64):
+        super().__init__()
+        inner_dim = dim_head * heads
+        self.heads = heads
+        self.scale = dim_head ** -0.5
+
+        self.to_qkv = nn.Conv3d(dim, inner_dim * 3, 1, bias=False)
+
+        self.detail = ContentBranch(dim, skip=0)
+        self.segment = SpatialBranch(dim, skip=0) 
+        self.merge = MergeLayer(inner_dim, skip=0)
+        self.head = SegmentHead(inner_dim, dim, skip=0)
+
+        self.to_out = nn.Sequential(
+            nn.Conv3d(inner_dim, dim, 1),
+            nn.BatchNorm3d(dim)
+        )
+
+    def forward(self, x):
+        b, c, d, h, w = x.shape
+        qkv = self.to_qkv(x).chunk(3, dim=1)
+        q, k, v = map(lambda t: t.reshape(b, self.heads, -1, d * h * w), qkv)
+
+        q = q * self.scale
+        sim = torch.einsum('bhid,bhjd->bhij', q, k)
+        sim = sim.softmax(dim=-1)
+
+        feat_d = self.detail(sim)
+        feat_s = self.segment(sim)
+        feat_head = self.merge(feat_d, feat_s)
+        logits = self.head(feat_head, [d, h, w])
+
+        out = torch.einsum('bhij,bhjd->bhid', sim, logits)
+        out = out.reshape(b, -1, d, h, w)
+        return self.to_out(out)
+
 class BasicUNetEncoder(nn.Module):
     def __init__(
         self,
@@ -252,13 +292,13 @@ class BasicUNetEncoder(nn.Module):
 
         self.conv_0 = TwoConv(spatial_dims, in_channels, features[0], act, norm, bias, dropout)
         self.down_1 = Down(spatial_dims, fea[0], fea[1], act, norm, bias, dropout)
-        self.attn_1 = LinearAttention3D(fea[1])
+        self.attn_1 = DD3D(fea[1])
         self.down_2 = Down(spatial_dims, fea[1], fea[2], act, norm, bias, dropout)
-        self.attn_2 = LinearAttention3D(fea[2])
+        self.attn_2 = DD3D(fea[2])
         self.down_3 = Down(spatial_dims, fea[2], fea[3], act, norm, bias, dropout)
-        self.attn_3 = LinearAttention3D(fea[3])
+        self.attn_3 = DD3D(fea[3])
         self.down_4 = Down(spatial_dims, fea[3], fea[4], act, norm, bias, dropout)
-        self.attn_4 = LinearAttention3D(fea[4])
+        self.attn_4 = DD3D(fea[4])
 
     def forward(self, x: torch.Tensor):
         x0 = self.conv_0(x)
