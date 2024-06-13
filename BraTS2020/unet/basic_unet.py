@@ -232,43 +232,32 @@ class LinearAttention3D(nn.Module):
         return self.to_out(out)
 
 
-class DD3D(nn.Module):
-    def __init__(self, dim, heads=8, dim_head=64):
-        super().__init__()
-        inner_dim = dim_head * heads
-        self.heads = heads
-        self.scale = dim_head ** -0.5
-
-        self.to_qkv = nn.Conv3d(dim, inner_dim * 3, 1, bias=False)
-
-        self.detail = ContentBranch(dim, skip=0)
-        self.segment = SpatialBranch(dim, skip=0) 
-        self.merge = MergeLayer(inner_dim, skip=0)
-        self.head = SegmentHead(inner_dim, dim, skip=0)
-
-        self.to_out = nn.Sequential(
-            nn.Conv3d(inner_dim, dim, 1),
-            nn.BatchNorm3d(dim)
-        )
-
+class DualDomainNet(nn.Module):
+    def __init__(self, num_classes, in_c, skip=0):
+        super(DualDomainNet, self).__init__()
+        m_in = [128, 64, 32, 16]
+        self.detail = ContentBranch(in_c, skip)
+        if skip < 3:
+            self.segment = SpatialBranch(in_c, skip) 
+            self.merge = MergeLayer(m_in[skip], skip)
+        in_seg = 128 if skip < 3 else m_in[::-1][skip-1] 
+        if (in_c > 128) & (skip == 3): 
+            in_seg = in_c
+        self.head = SegmentHead(in_seg, num_classes, skip)
+        self.skip = skip
+        
     def forward(self, x):
-        b, c, d, h, w = x.shape
-        qkv = self.to_qkv(x).chunk(3, dim=1)
-        q, k, v = map(lambda t: t.reshape(b, self.heads, -1, d * h * w), qkv)
+        size = x.size()[2:]
+        feat_d = self.detail(x)
+        if self.skip < 3:
+            feat_s = self.segment(x)
+            feat_head = self.merge(feat_d, feat_s)
+        else:
+            feat_head = feat_d
+        logits = self.head(feat_head, size)
+        return logits
 
-        q = q * self.scale
-        sim = torch.einsum('bhid,bhjd->bhij', q, k)
-        sim = sim.softmax(dim=-1)
-
-        feat_d = self.detail(sim)
-        feat_s = self.segment(sim)
-        feat_head = self.merge(feat_d, feat_s)
-        logits = self.head(feat_head, [d, h, w])
-
-        out = torch.einsum('bhij,bhjd->bhid', sim, logits)
-        out = out.reshape(b, -1, d, h, w)
-        return self.to_out(out)
-
+# Định nghĩa lớp BasicUNetEncoder
 class BasicUNetEncoder(nn.Module):
     def __init__(
         self,
@@ -292,13 +281,13 @@ class BasicUNetEncoder(nn.Module):
 
         self.conv_0 = TwoConv(spatial_dims, in_channels, features[0], act, norm, bias, dropout)
         self.down_1 = Down(spatial_dims, fea[0], fea[1], act, norm, bias, dropout)
-        self.attn_1 = DD3D(fea[1])
+        self.attn_1 = DualDomainNet(fea[1], fea[1], skip=0)  # skip=0 để giữ lại nhiều tầng hơn
         self.down_2 = Down(spatial_dims, fea[1], fea[2], act, norm, bias, dropout)
-        self.attn_2 = DD3D(fea[2])
+        self.attn_2 = DualDomainNet(fea[2], fea[2], skip=1)  # skip=1 để bỏ qua ít tầng hơn
         self.down_3 = Down(spatial_dims, fea[2], fea[3], act, norm, bias, dropout)
-        self.attn_3 = DD3D(fea[3])
+        self.attn_3 = DualDomainNet(fea[3], fea[3], skip=2)  # skip=2 để bỏ qua nhiều tầng hơn
         self.down_4 = Down(spatial_dims, fea[3], fea[4], act, norm, bias, dropout)
-        self.attn_4 = DD3D(fea[4])
+        self.attn_4 = DualDomainNet(fea[4], fea[4], skip=3)  # skip=3 để bỏ qua nhiều tầng nhất
 
     def forward(self, x: torch.Tensor):
         x0 = self.conv_0(x)
