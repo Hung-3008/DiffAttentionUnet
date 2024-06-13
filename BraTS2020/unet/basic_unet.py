@@ -257,7 +257,6 @@ class DualDomainNet(nn.Module):
         logits = self.head(feat_head, size)
         return logits
 
-# Định nghĩa lớp BasicUNetEncoder
 class BasicUNetEncoder(nn.Module):
     def __init__(
         self,
@@ -281,13 +280,23 @@ class BasicUNetEncoder(nn.Module):
 
         self.conv_0 = TwoConv(spatial_dims, in_channels, features[0], act, norm, bias, dropout)
         self.down_1 = Down(spatial_dims, fea[0], fea[1], act, norm, bias, dropout)
-        self.attn_1 = DualDomainNet(fea[1], fea[1], skip=0)  # skip=0 để giữ lại nhiều tầng hơn
+        self.attn_1 = self.create_attention_layer(fea[1])
         self.down_2 = Down(spatial_dims, fea[1], fea[2], act, norm, bias, dropout)
-        self.attn_2 = DualDomainNet(fea[2], fea[2], skip=1)  # skip=1 để bỏ qua ít tầng hơn
+        self.attn_2 = self.create_attention_layer(fea[2])
         self.down_3 = Down(spatial_dims, fea[2], fea[3], act, norm, bias, dropout)
-        self.attn_3 = DualDomainNet(fea[3], fea[3], skip=2)  # skip=2 để bỏ qua nhiều tầng hơn
+        self.attn_3 = self.create_attention_layer(fea[3])
         self.down_4 = Down(spatial_dims, fea[3], fea[4], act, norm, bias, dropout)
-        self.attn_4 = DualDomainNet(fea[4], fea[4], skip=3)  # skip=3 để bỏ qua nhiều tầng nhất
+        self.attn_4 = self.create_attention_layer(fea[4])
+
+    def create_attention_layer(self, out_c):
+        if out_c < 128:
+            return DualDomainNet(out_c, out_c, skip=0)
+        elif out_c < 256:
+            return DualDomainNet(out_c, out_c, skip=1)
+        elif out_c < 320:
+            return DualDomainNet(out_c, out_c, skip=2)
+        else:
+            return DualDomainNet(out_c, out_c, skip=3)
 
     def forward(self, x: torch.Tensor):
         x0 = self.conv_0(x)
