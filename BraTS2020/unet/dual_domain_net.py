@@ -24,7 +24,6 @@ class ConvBNReLU(nn.Module):
 
 
 class ContentBranch(nn.Module):
-
     def __init__(self, in_c, skip):
         super(ContentBranch, self).__init__()
         self.S1 = nn.Sequential(
@@ -50,6 +49,7 @@ class ContentBranch(nn.Module):
 
     def forward(self, x):
         feat = self.branch(x)
+        print(f"ContentBranch output shape: {feat.shape}")
         return feat
 
 
@@ -159,7 +159,6 @@ class C1Block(nn.Module):
 
 
 class SpatialBranch(nn.Module):
-
     def __init__(self, in_c, skip):
         super(SpatialBranch, self).__init__()
         self.S1S2 = StemBlock(in_c)
@@ -187,6 +186,7 @@ class SpatialBranch(nn.Module):
 
     def forward(self, x):
         feat = self.branch(x)
+        #print(f"SpatialBranch output shape: {feat.shape}")
         return feat
 
 
@@ -242,10 +242,29 @@ class MergeLayer(nn.Module):
         right1 = self.right1(x_s)
         right2 = self.right2(x_s)
         right1 = self.up(right1)
-        left = left1 * torch.sigmoid(right1)
-        right = left2 * torch.sigmoid(right2)
+
+        right1_upsampled = F.interpolate(right1, size=left1.shape[2:], mode='nearest')
+        left = left1 * torch.sigmoid(right1_upsampled)
+
+        right2_upsampled = F.interpolate(right2, size=left2.shape[2:], mode='nearest')
+        right = left2 * torch.sigmoid(right2_upsampled)
+        #print(f"left shape: {left.shape}, right shape: {right.shape}")
+
         right = self.up(right)
-        out = self.conv(left + right)
+        #print(f"left shape: {left.shape}, right shape after up: {right.shape}")
+        
+        padding_needed_depth = right.shape[2] - left.shape[2]
+        padding_needed_height = right.shape[3] - left.shape[3]
+        padding_needed_width = right.shape[4] - left.shape[4]
+
+        # Calculate padding for each side, ensuring even distribution as much as possible
+        pad_depth = (padding_needed_depth // 2, padding_needed_depth // 2 + padding_needed_depth % 2)
+        pad_height = (padding_needed_height // 2, padding_needed_height // 2 + padding_needed_height % 2)
+        pad_width = (padding_needed_width // 2, padding_needed_width // 2 + padding_needed_width % 2)
+
+        # Apply padding to the left tensor on depth, height, and width dimensions
+        left_padded = F.pad(left, (pad_width[0], pad_width[1], pad_height[0], pad_height[1], pad_depth[0], pad_depth[1]), "constant", 0)#print(f"left shape: {left.shape}, right shape after up: {right.shape}, left_padded shape: {left_padded.shape}")
+        out = self.conv(left_padded + right)
         return out
 
 
@@ -287,9 +306,14 @@ class DualDomainNet(nn.Module):
         
     def forward(self, x):
         size = x.size()[2:]
-        feat_d = self.detail(x)
+        print(f"Input shape: {x.shape}")
+        print(f"Skip: {self.skip}")
+        print(f"Size: {size}")
+        feat_d = self.detail(size)
         if self.skip < 3:
-            feat_s = self.segment(x)
+            print(f"feat_d shape: {feat_d.shape}, feat_s shape: {feat_s.shape}")
+
+            feat_s = self.segment(size)
             feat_head = self.merge(feat_d, feat_s)
         else:
             feat_head = feat_d

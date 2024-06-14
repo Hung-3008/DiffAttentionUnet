@@ -20,7 +20,7 @@ from monai.networks.blocks import Convolution, UpSample
 from monai.networks.layers.factories import Conv, Pool
 from monai.utils import deprecated_arg, ensure_tuple_rep
 
-from dual_domain_net import ContentBranch, SpatialBranch, MergeLayer, SegmentHead
+from .dual_domain_net import ContentBranch, SpatialBranch, MergeLayer, SegmentHead
 
 __all__ = ["BasicUnet", "Basicunet", "basicunet", "BasicUNet"]
 
@@ -238,7 +238,7 @@ class DualDomainNet(nn.Module):
         m_in = [128, 64, 32, 16]
         self.detail = ContentBranch(in_c, skip)
         if skip < 3:
-            self.segment = SpatialBranch(in_c, skip) 
+            self.segment = SpatialBranch(in_c, skip)
             self.merge = MergeLayer(m_in[skip], skip)
         in_seg = 128 if skip < 3 else m_in[::-1][skip-1] 
         if (in_c > 128) & (skip == 3): 
@@ -248,9 +248,13 @@ class DualDomainNet(nn.Module):
         
     def forward(self, x):
         size = x.size()[2:]
+        #print(f"Input shape: {x.shape}")
+        #print(f"Skip: {self.skip}")
+        #print(f"Size: {size}")
         feat_d = self.detail(x)
         if self.skip < 3:
             feat_s = self.segment(x)
+            #print(f"feat_d shape: {feat_d.shape}, feat_s shape: {feat_s.shape}")
             feat_head = self.merge(feat_d, feat_s)
         else:
             feat_head = feat_d
@@ -301,6 +305,7 @@ class BasicUNetEncoder(nn.Module):
     def forward(self, x: torch.Tensor):
         x0 = self.conv_0(x)
         x1 = self.down_1(x0)
+        print(f"x1 shape: {x1.shape}")
         x1 = self.attn_1(x1)
         x2 = self.down_2(x1)
         x2 = self.attn_2(x2)
