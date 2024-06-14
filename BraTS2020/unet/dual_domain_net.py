@@ -1,11 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchsummary import summary
-import monai.networks.blocks as mn
 
 class ConvBNReLU(nn.Module):
-
     def __init__(self, in_chan, out_chan, ks=3, stride=1, padding=1,
                  dilation=1, groups=1, bias=False):
         super(ConvBNReLU, self).__init__()
@@ -21,7 +18,6 @@ class ConvBNReLU(nn.Module):
         feat = self.bn(feat)
         feat = self.relu(feat)
         return feat
-
 
 class ContentBranch(nn.Module):
     def __init__(self, in_c, skip):
@@ -49,13 +45,9 @@ class ContentBranch(nn.Module):
 
     def forward(self, x):
         feat = self.branch(x)
-        print(f"ContentBranch output shape: {feat.shape}")
         return feat
 
-
-
 class StemBlock(nn.Module):
-
     def __init__(self, in_c):
         super(StemBlock, self).__init__()
         self.conv = ConvBNReLU(in_c, 16, 3, stride=2)
@@ -75,10 +67,7 @@ class StemBlock(nn.Module):
         feat = self.fuse(feat)
         return feat
 
-
-
 class C2Block(nn.Module):
-
     def __init__(self, in_chan, out_chan, exp_ratio=6):
         super(C2Block, self).__init__()
         mid_chan = in_chan * exp_ratio
@@ -88,7 +77,7 @@ class C2Block(nn.Module):
                 in_chan, mid_chan, kernel_size=3, stride=1,
                 padding=1, groups=in_chan, bias=False),
             nn.BatchNorm3d(mid_chan),
-            nn.ReLU(inplace=True), # not shown in paper
+            nn.ReLU(inplace=True), 
         )
         self.conv2 = nn.Sequential(
             nn.Conv3d(
@@ -107,9 +96,7 @@ class C2Block(nn.Module):
         feat = self.relu(feat)
         return feat
 
-
 class C1Block(nn.Module):
-
     def __init__(self, in_chan, out_chan, exp_ratio=6):
         super(C1Block, self).__init__()
         mid_chan = in_chan * exp_ratio
@@ -125,7 +112,7 @@ class C1Block(nn.Module):
                 mid_chan, mid_chan, kernel_size=3, stride=1,
                 padding=1, groups=mid_chan, bias=False),
             nn.BatchNorm3d(mid_chan),
-            nn.ReLU(inplace=True), # not shown in paper
+            nn.ReLU(inplace=True), 
         )
         self.conv2 = nn.Sequential(
             nn.Conv3d(
@@ -156,8 +143,6 @@ class C1Block(nn.Module):
         feat = self.relu(feat)
         return feat
 
-
-
 class SpatialBranch(nn.Module):
     def __init__(self, in_c, skip):
         super(SpatialBranch, self).__init__()
@@ -186,13 +171,9 @@ class SpatialBranch(nn.Module):
 
     def forward(self, x):
         feat = self.branch(x)
-        #print(f"SpatialBranch output shape: {feat.shape}")
         return feat
 
-
-
 class MergeLayer(nn.Module):
-
     def __init__(self, in_c, skip):
         super(MergeLayer, self).__init__()
         self.left1 = nn.Sequential(
@@ -233,7 +214,7 @@ class MergeLayer(nn.Module):
             nn.BatchNorm3d(128),
             nn.ReLU(inplace=True), 
         )
-        self.up = mn.UpSample(3, in_channels=128, out_channels=128, scale_factor=4, kernel_size=3)
+        self.up = nn.Upsample(scale_factor=4, mode='trilinear', align_corners=True)
 
     def forward(self, x_d, x_s):
         dsize = x_d.size()[2:]
@@ -243,40 +224,29 @@ class MergeLayer(nn.Module):
         right2 = self.right2(x_s)
         right1 = self.up(right1)
 
-        right1_upsampled = F.interpolate(right1, size=left1.shape[2:], mode='nearest')
-        left = left1 * torch.sigmoid(right1_upsampled)
-
-        right2_upsampled = F.interpolate(right2, size=left2.shape[2:], mode='nearest')
-        right = left2 * torch.sigmoid(right2_upsampled)
-        #print(f"left shape: {left.shape}, right shape: {right.shape}")
-
-        right = self.up(right)
-        #print(f"left shape: {left.shape}, right shape after up: {right.shape}")
+        # Resize right1 and right2 to match the size of left1 and left2
+        right1 = F.interpolate(right1, size=left1.shape[2:], mode='trilinear', align_corners=True)
+        right2 = F.interpolate(right2, size=left2.shape[2:], mode='trilinear', align_corners=True)
         
-        padding_needed_depth = right.shape[2] - left.shape[2]
-        padding_needed_height = right.shape[3] - left.shape[3]
-        padding_needed_width = right.shape[4] - left.shape[4]
-
-        # Calculate padding for each side, ensuring even distribution as much as possible
-        pad_depth = (padding_needed_depth // 2, padding_needed_depth // 2 + padding_needed_depth % 2)
-        pad_height = (padding_needed_height // 2, padding_needed_height // 2 + padding_needed_height % 2)
-        pad_width = (padding_needed_width // 2, padding_needed_width // 2 + padding_needed_width % 2)
-
-        # Apply padding to the left tensor on depth, height, and width dimensions
-        left_padded = F.pad(left, (pad_width[0], pad_width[1], pad_height[0], pad_height[1], pad_depth[0], pad_depth[1]), "constant", 0)#print(f"left shape: {left.shape}, right shape after up: {right.shape}, left_padded shape: {left_padded.shape}")
-        out = self.conv(left_padded + right)
+        left = left1 * torch.sigmoid(right1)
+        right = left2 * torch.sigmoid(right2)
+        right = self.up(right)
+        right = F.interpolate(right, size=left.shape[2:], mode='trilinear', align_corners=True)
+        out = self.conv(left + right)
         return out
 
-
 class SegmentHead(nn.Module):
-
     def __init__(self, in_chan, num_classes, skip):
         super(SegmentHead, self).__init__()
         self.conv_out = nn.Conv3d(
                 in_chan, num_classes, kernel_size=1, stride=1,
                 padding=0, bias=True)
-        self.bn_act = mn.ADN(ordering="NDA", in_channels=in_chan, dropout_dim=1, dropout=0.1)
-        self.up = mn.UpSample(3, in_channels=in_chan, out_channels=in_chan, scale_factor=2, kernel_size=3)
+        self.bn_act = nn.Sequential(
+            nn.BatchNorm3d(in_chan),
+            nn.ReLU(inplace=True),
+            nn.Dropout3d(0.1),
+        )
+        self.up = nn.Upsample(scale_factor=2, mode='trilinear', align_corners=True)
         self.skip = skip
 
     def forward(self, x, size=None):
@@ -287,11 +257,8 @@ class SegmentHead(nn.Module):
         feat = self.conv_out(feat)
         return feat
 
-
-    
 class DualDomainNet(nn.Module):
-
-    def __init__(self, num_classes, in_c, skip = 0):
+    def __init__(self, num_classes, in_c, skip=0):
         super(DualDomainNet, self).__init__()
         m_in = [128, 64, 32, 16]
         self.detail = ContentBranch(in_c, skip)
@@ -306,14 +273,9 @@ class DualDomainNet(nn.Module):
         
     def forward(self, x):
         size = x.size()[2:]
-        print(f"Input shape: {x.shape}")
-        print(f"Skip: {self.skip}")
-        print(f"Size: {size}")
-        feat_d = self.detail(size)
+        feat_d = self.detail(x)
         if self.skip < 3:
-            print(f"feat_d shape: {feat_d.shape}, feat_s shape: {feat_s.shape}")
-
-            feat_s = self.segment(size)
+            feat_s = self.segment(x)
             feat_head = self.merge(feat_d, feat_s)
         else:
             feat_head = feat_d
