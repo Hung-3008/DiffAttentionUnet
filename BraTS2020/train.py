@@ -174,13 +174,19 @@ class BraTSTrainer(Trainer):
 
 if __name__ == "__main__":
 
-    train_ds, val_ds, test_ds = get_loader_brats(data_dir=data_dir, batch_size=batch_size, fold=0)
     # create parser with two arguments --resume and --checkpoint_dir
     parser = argparse.ArgumentParser()
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--checkpoint_dir", type=str)
-
+    # parse the batch_size and max_epoch
+    parser.add_argument("--batch_size", type=int, default=batch_size)
+    parser.add_argument("--max_epoch", type=int, default=max_epoch)
+    
     args = parser.parse_args()
+    batch_size = args.batch_size
+    max_epoch = args.max_epoch
+
+    train_ds, val_ds, test_ds = get_loader_brats(data_dir=data_dir, batch_size=batch_size, fold=0)
 
     trainer = BraTSTrainer(env_type=env,
                                 max_epochs=max_epoch,
