@@ -28,7 +28,7 @@ model_save_path = os.path.join(logdir, "model")
 env = "pytorch"
 
 max_epoch = 300
-batch_size = 1
+batch_size = 2
 val_every = 10
 num_gpus = 1
 device = "cuda:0"
