@@ -225,9 +225,13 @@ class MergeLayer(nn.Module):
         right1 = self.up(right1)
 
         # Resize right1 and right2 to match the size of left1 and left2
-        right1 = F.interpolate(right1, size=left1.shape[2:], mode='trilinear', align_corners=True)
-        right2 = F.interpolate(right2, size=left2.shape[2:], mode='trilinear', align_corners=True)
-        
+        #right1 = F.interpolate(right1, size=left1.shape[2:], mode='trilinear', align_corners=True)
+        #right2 = F.interpolate(right2, size=left2.shape[2:], mode='trilinear', align_corners=True)
+        print(f"left1 shape: {left1.shape}")
+        print(f"right1 shape: {right1.shape}")
+
+        print(f"left2 shape: {left2.shape}")
+        print(f"right2 shape: {right2.shape}")
         left = left1 * torch.sigmoid(right1)
         right = left2 * torch.sigmoid(right2)
         right = self.up(right)
@@ -265,6 +269,8 @@ class DualDomainNet(nn.Module):
         if skip < 3:
             self.segment = SpatialBranch(in_c, skip) 
             self.merge = MergeLayer(m_in[skip], skip)
+
+    
         in_seg = 128 if skip < 3 else m_in[::-1][skip-1] 
         if (in_c > 128) & (skip == 3): 
             in_seg = in_c
@@ -274,10 +280,14 @@ class DualDomainNet(nn.Module):
     def forward(self, x):
         size = x.size()[2:]
         feat_d = self.detail(x)
+        print(f"content branch output shape: {feat_d.shape}")
         if self.skip < 3:
             feat_s = self.segment(x)
+            print(f"spatial branch output shape: {feat_s.shape}")
             feat_head = self.merge(feat_d, feat_s)
+            print(f"merge layer output shape: {feat_head.shape}")
         else:
             feat_head = feat_d
         logits = self.head(feat_head, size)
+        print(f"segment head output shape: {logits.shape}")
         return logits
