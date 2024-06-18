@@ -144,6 +144,18 @@ class Args:
         self.fold=0
         self.batch_size=2
 
+class MRBrainS(transforms.MapTransform):
+        def __call__(self, data):
+            d = dict(data)
+            for key in self.keys:
+                result = []
+                result.append(torch.logical_or(d[key] == 1, d[key] == 2))
+                result.append(torch.logical_or(d[key] == 3, d[key] == 4))
+                result.append(torch.logical_or(d[key] == 5, d[key] == 6))
+                d[key] = torch.stack(result, axis=0).float()
+            return d
+
+
 def get_loader_brats(data_dir, batch_size=1, fold=0, num_workers=4):
 
     all_dirs = os.listdir(data_dir)
@@ -158,32 +170,88 @@ def get_loader_brats(data_dir, batch_size=1, fold=0, num_workers=4):
     test_files = all_paths[train_size+val_size:]
     print(f"train is {len(train_files)}, val is {len(val_files)}, test is {len(test_files)}")
 
-    train_transform = transforms.Compose(
-        [   
-            transforms.ConvertToMultiChannelBasedOnBratsClassesD(keys=["label"]),
-            transforms.CropForegroundd(keys=["image", "label"], source_key="image"),
+    # train_transform = transforms.Compose(
+    #     [   
+    #         transforms.ConvertToMultiChannelBasedOnBratsClassesD(keys=["label"]),
+    #         transforms.CropForegroundd(keys=["image", "label"], source_key="image"),
 
-            transforms.RandSpatialCropd(keys=["image", "label"], roi_size=[64, 64, 64],
-                                        random_size=False),
-            transforms.SpatialPadd(keys=["image", "label"], spatial_size=(64, 64, 64)),
-            transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=0),
-            transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=1),
-            transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=2),
-            transforms.NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
+    #         transforms.RandSpatialCropd(keys=["image", "label"], roi_size=[64, 64, 64],
+    #                                     random_size=False),
+    #         transforms.SpatialPadd(keys=["image", "label"], spatial_size=(64, 64, 64)),
+    #         transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=0),
+    #         transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=1),
+    #         transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=2),
+    #         transforms.NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
             
-            transforms.RandScaleIntensityd(keys="image", factors=0.1, prob=1.0),
-            transforms.RandShiftIntensityd(keys="image", offsets=0.1, prob=1.0),
-            transforms.ToTensord(keys=["image", "label"],),
-        ]
-    )
-    val_transform = transforms.Compose(
-        [   transforms.ConvertToMultiChannelBasedOnBratsClassesD(keys=["label"]),
-            transforms.CropForegroundd(keys=["image", "label"], source_key="image"),
+    #         transforms.RandScaleIntensityd(keys="image", factors=0.1, prob=1.0),
+    #         transforms.RandShiftIntensityd(keys="image", offsets=0.1, prob=1.0),
+    #         transforms.ToTensord(keys=["image", "label"],),
+    #     ]
+    # )
+    # val_transform = transforms.Compose(
+    #     [   transforms.ConvertToMultiChannelBasedOnBratsClassesD(keys=["label"]),
+    #         transforms.CropForegroundd(keys=["image", "label"], source_key="image"),
 
+    #         transforms.NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
+    #         transforms.ToTensord(keys=["image", "label"]),
+    #     ]
+    # )
+
+    
+    train_transform = transforms.Compose(
+                [
+                    transforms.LoadImaged(keys=["image", "label"]),
+                    transforms.EnsureChannelFirstd(keys="image"),
+                    transforms.EnsureTyped(keys=["image", "label"]),
+                    MRBrainS(keys="label"),
+                    transforms.Orientationd(keys=["image", "label"], axcodes="RAS"),
+                    transforms.Spacingd(
+                        keys=["image", "label"],
+                        pixdim=(1, 1, 1),
+                        mode=("bilinear", "nearest"),
+                    ),
+                    transforms.RandSpatialCropd(keys=["image", "label"], roi_size=[128, 128, 128], random_size=False),
+                    transforms.SpatialPadd(keys=["image", "label"], spatial_size=(128, 128, 128)),
+                    transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=0),
+                    transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=1),
+                    transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=2),
+                    transforms.NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
+                    transforms.RandScaleIntensityd(keys="image", factors=0.1, prob=1.0),
+                    transforms.RandShiftIntensityd(keys="image", offsets=0.1, prob=1.0),
+                ]
+            )
+
+    val_transform = transforms.Compose(
+        [
+
+            transforms.LoadImaged(keys=["image", "label"]),
+            transforms.EnsureChannelFirstd(keys="image"),
+            transforms.EnsureTyped(keys=["image", "label"]),
+            MRBrainS(keys="label"),
+            transforms.Orientationd(keys=["image", "label"], axcodes="RAS"),
+            transforms.Spacingd(
+                    keys=["image", "label"],
+                    pixdim=(1, 1, 1),
+                    mode=("bilinear", "nearest"),
+                ),
             transforms.NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
-            transforms.ToTensord(keys=["image", "label"]),
         ]
     )
+
+    test_transform = transforms.Compose(
+            [
+                transforms.LoadImaged(keys="image"),
+                transforms.EnsureChannelFirstd(keys="image"),
+                transforms.EnsureTyped(keys="image"),
+                transforms.Orientationd(keys="image", axcodes="LPS"),
+                transforms.Spacingd(
+                        keys=["image", "label"],
+                        pixdim=(1, 1, 1),
+                        mode=("bilinear", "nearest"),
+                    ),
+                transforms.NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
+            ]
+        )
 
     train_ds = PretrainDataset(train_files, transform=train_transform)
 
