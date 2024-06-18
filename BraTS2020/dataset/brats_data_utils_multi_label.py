@@ -201,8 +201,8 @@ def get_loader_brats(data_dir, batch_size=1, fold=0, num_workers=4):
     train_transform = transforms.Compose(
                 [
                     #transforms.LoadImaged(keys=["image", "label"]),
-                    transforms.EnsureChannelFirstd(keys="image"),
-                    transforms.EnsureTyped(keys=["image", "label"]),
+                    #transforms.EnsureChannelFirstd(keys="image"),
+                    #transforms.EnsureTyped(keys=["image", "label"]),
                     MRBrainS(keys="label"),
                     transforms.Orientationd(keys=["image", "label"], axcodes="RAS"),
                     transforms.Spacingd(
@@ -225,8 +225,8 @@ def get_loader_brats(data_dir, batch_size=1, fold=0, num_workers=4):
         [
 
             #transforms.LoadImaged(keys=["image", "label"]),
-            transforms.EnsureChannelFirstd(keys="image"),
-            transforms.EnsureTyped(keys=["image", "label"]),
+            #transforms.EnsureChannelFirstd(keys="image"),
+            #transforms.EnsureTyped(keys=["image", "label"]),
             MRBrainS(keys="label"),
             transforms.Orientationd(keys=["image", "label"], axcodes="RAS"),
             transforms.Spacingd(
