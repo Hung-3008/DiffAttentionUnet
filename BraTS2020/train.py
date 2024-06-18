@@ -28,7 +28,7 @@ model_save_path = os.path.join(logdir, "model")
 env = "pytorch"
 
 max_epoch = 300
-batch_size = 2
+batch_size = 1
 val_every = 10
 num_gpus = 1
 device = "cuda:0"
@@ -40,7 +40,7 @@ class DiffUNet(nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.embed_model = BasicUNetEncoder(3, number_modality, number_targets, [64, 64, 128, 256, 512, 64])
-        # return 4 layers <=> 4 embeddings
+     
         self.model = BasicUNetDe(3, number_modality + number_targets, number_targets, [64, 64, 128, 256, 512, 64], 
                                 act = ("LeakyReLU", {"negative_slope": 0.1, "inplace": False}))
    
@@ -74,14 +74,14 @@ class DiffUNet(nn.Module):
         elif pred_type == "ddim_sample":
             embeddings = self.embed_model(image)
 
-            sample_out = self.sample_diffusion.ddim_sample_loop(self.model, (1, number_targets, 128, 128, 128), model_kwargs={"image": image, "embeddings": embeddings})
+            sample_out = self.sample_diffusion.ddim_sample_loop(self.model, (1, number_targets, 64, 64, 64), model_kwargs={"image": image, "embeddings": embeddings})
             sample_out = sample_out["pred_xstart"]
             return sample_out
 
 class BraTSTrainer(Trainer):
     def __init__(self, env_type, max_epochs, batch_size, device="cpu", val_every=1, num_gpus=1, logdir="./logs/", master_ip='localhost', master_port=17750, training_script="train.py"):
         super().__init__(env_type, max_epochs, batch_size, device, val_every, num_gpus, logdir, master_ip, master_port, training_script)
-        self.window_infer = SlidingWindowInferer(roi_size=[128, 128, 128],
+        self.window_infer = SlidingWindowInferer(roi_size=[64, 64, 64],
                                         sw_batch_size=1,
                                         overlap=0.25)
         self.model = DiffUNet()
