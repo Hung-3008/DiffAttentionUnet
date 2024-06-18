@@ -145,15 +145,15 @@ class Args:
         self.batch_size=2
 
 class MRBrainS(transforms.MapTransform):
-        def __call__(self, data):
-            d = dict(data)
-            for key in self.keys:
-                result = []
-                result.append(torch.logical_or(d[key] == 1, d[key] == 2))
-                result.append(torch.logical_or(d[key] == 3, d[key] == 4))
-                result.append(torch.logical_or(d[key] == 5, d[key] == 6))
-                d[key] = torch.stack(result, axis=0).float()
-            return d
+    def __call__(self, data):
+        d = dict(data)
+        for key in self.keys:
+            result = []
+            result.append(torch.logical_or(d[key] == 1, d[key] == 2))
+            result.append(torch.logical_or(d[key] == 3, d[key] == 4))
+            result.append(torch.logical_or(d[key] == 5, d[key] == 6))
+            d[key] = torch.stack(result, axis=0).float()
+        return d
 
 
 def get_loader_brats(data_dir, batch_size=1, fold=0, num_workers=4):
@@ -200,7 +200,7 @@ def get_loader_brats(data_dir, batch_size=1, fold=0, num_workers=4):
     
     train_transform = transforms.Compose(
                 [
-                    transforms.LoadImaged(keys=["image", "label"]),
+                    #transforms.LoadImaged(keys=["image", "label"]),
                     transforms.EnsureChannelFirstd(keys="image"),
                     transforms.EnsureTyped(keys=["image", "label"]),
                     MRBrainS(keys="label"),
@@ -224,7 +224,7 @@ def get_loader_brats(data_dir, batch_size=1, fold=0, num_workers=4):
     val_transform = transforms.Compose(
         [
 
-            transforms.LoadImaged(keys=["image", "label"]),
+            #transforms.LoadImaged(keys=["image", "label"]),
             transforms.EnsureChannelFirstd(keys="image"),
             transforms.EnsureTyped(keys=["image", "label"]),
             MRBrainS(keys="label"),
