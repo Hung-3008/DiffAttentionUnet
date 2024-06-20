@@ -96,6 +96,7 @@ class BraTSTrainer(Trainer):
 
         self.bce = nn.BCEWithLogitsLoss()
         self.dice_loss = DiceLoss(sigmoid=True)
+        
 
     def training_step(self, batch):
         image, label = self.get_input(batch)
@@ -169,8 +170,14 @@ class BraTSTrainer(Trainer):
                                         os.path.join(model_save_path, 
                                         f"final_model_{mean_dice:.4f}.pt"), 
                                         delete_symbol="final_model")
+        self.save_checkpoint(os.path.join(model_save_path, f"checkpoint_save_from_ep_{self.epoch}.pt"))
 
         print(f"wt is {wt}, tc is {tc}, et is {et}, mean_dice is {mean_dice}")
+    
+    def resume_checkpoint(self, checkpoint_path):
+        self.load_checkpoint(checkpoint_path)
+        print(f"Resume from {checkpoint_path}")
+        
 
 if __name__ == "__main__":
 
@@ -203,9 +210,7 @@ if __name__ == "__main__":
                                 training_script=__file__)
 
     if args.resume:
-        checkpoint = os.path.join(args.checkpoint_dir)
-        trainer.load_state_dict(checkpoint)
-        print(f"Resume from {checkpoint}")
+        trainer.resume_checkpoint(args.checkpoint_dir)
 
 
     trainer.train(train_dataset=train_ds, val_dataset=val_ds)
