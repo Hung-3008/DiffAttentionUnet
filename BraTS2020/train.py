@@ -170,8 +170,12 @@ class BraTSTrainer(Trainer):
                                         os.path.join(model_save_path, 
                                         f"final_model_{mean_dice:.4f}.pt"), 
                                         delete_symbol="final_model")
-        self.save_checkpoint(os.path.join(model_save_path, f"checkpoint_save_from_ep_{self.epoch}.pt"))
-        print(f'checkponit saved at {model_save_path} successfully!')
+        try:
+            self.save_checkpoint(os.path.join(model_save_path, f"checkpoint_save_from_ep_{self.epoch}.pt"))
+            print(f'checkponit saved at {model_save_path} successfully!')
+        except Exception as e:
+            print(f"checkpoint save failed, error is {e}")
+            
 
         print(f"wt is {wt}, tc is {tc}, et is {et}, mean_dice is {mean_dice}")
     
