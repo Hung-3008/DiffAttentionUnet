@@ -77,17 +77,17 @@ class Trainer:
                 os._exit(1)
             self.initialize_distributed()
 
-    def save_checkpoint(self, filename):
-        checkpoint = {
-            'epoch': self.epoch,
-            'global_step': self.global_step,
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'scheduler_state_dict': self.scheduler.state_dict() if self.scheduler else None,
-            'best_mean_dice': self.best_mean_dice
-        }
-        torch.save(checkpoint, filename)
-        print(f"Checkpoint saved to {filename}")
+    # def save_checkpoint(self, filename):
+    #     checkpoint = {
+    #         'epoch': self.epoch,
+    #         'global_step': self.global_step,
+    #         'model_state_dict': self.model.state_dict(),
+    #         'optimizer_state_dict': self.optimizer.state_dict(),
+    #         'scheduler_state_dict': self.scheduler.state_dict() if self.scheduler else None,
+    #         'best_mean_dice': self.best_mean_dice
+    #     }
+    #     torch.save(checkpoint, filename)
+    #     print(f"Checkpoint saved to {filename}")
 
     
             
