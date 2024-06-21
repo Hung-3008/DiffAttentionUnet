@@ -45,7 +45,7 @@ class Trainer:
         self.max_epochs = max_epochs
         self.ddp = False
         self.num_gpus = num_gpus
-        self.device = device
+        self.device = 'cuda:0'
         self.rank = 0
         self.local_rank = 0
         self.batch_size = batch_size
@@ -89,19 +89,7 @@ class Trainer:
         torch.save(checkpoint, filename)
         print(f"Checkpoint saved to {filename}")
 
-    def load_checkpoint(self, filename):
-        if os.path.isfile(filename):
-            checkpoint = torch.load(filename)
-            self.epoch = checkpoint['epoch']
-            self.global_step = checkpoint['global_step']
-            self.model.load_state_dict(checkpoint['model_state_dict'])
-            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            if self.scheduler:
-                self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-            self.best_mean_dice = checkpoint['best_mean_dice']
-            print(f"Checkpoint loaded from {filename}")
-        else:
-            print(f"No checkpoint found at {filename}")
+    
             
     def initialize_distributed(self):
         """Initialize torch.distributed."""
