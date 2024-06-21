@@ -7,7 +7,7 @@ from light_training.evaluation.metric import dice
 from light_training.trainer import Trainer
 from monai.utils import set_determinism
 from light_training.utils.lr_scheduler import LinearWarmupCosineAnnealingLR
-from light_training.utils.files_helper import save_new_model_and_delete_last
+from light_training.utils.files_helper import save_new_model_and_delete_last, save_model
 from unet.basic_unet_denose import BasicUNetDe
 from unet.basic_unet import BasicUNetEncoder
 import argparse
@@ -165,16 +165,18 @@ class BraTSTrainer(Trainer):
                                             os.path.join(model_save_path, 
                                             f"best_model_{mean_dice:.4f}.pt"), 
                                             delete_symbol="best_model")
+            
+            save_model(os.path.join(model_save_path, "best_model_checkpoint.pt"), 
+                        self.epoch, self.global_step, self.model, self.optimizer, self.scheduler, self.best_mean_dice)
+            
 
         save_new_model_and_delete_last(self.model, 
                                         os.path.join(model_save_path, 
                                         f"final_model_{mean_dice:.4f}.pt"), 
                                         delete_symbol="final_model")
-        try:
-            self.save_checkpoint(os.path.join(model_save_path, f"checkpoint_save_from_ep_{self.epoch}.pt"))
-            print(f'checkponit saved at {model_save_path} successfully!')
-        except Exception as e:
-            print(f"checkpoint save failed, error is {e}")
+        save_model(os.path.join(model_save_path, "final_model_checkpoint.pt"), 
+                    self.epoch, self.global_step, self.model, self.optimizer, self.scheduler, self.best_mean_dice)
+        
 
 
         print(f"wt is {wt}, tc is {tc}, et is {et}, mean_dice is {mean_dice}")
