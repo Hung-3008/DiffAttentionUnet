@@ -97,6 +97,22 @@ class BraTSTrainer(Trainer):
         self.bce = nn.BCEWithLogitsLoss()
         self.dice_loss = DiceLoss(sigmoid=True)
         
+    
+    def load_checkpoint(self, filename):
+        if os.path.isfile(filename):
+            checkpoint = torch.load(filename)
+            self.epoch = checkpoint['epoch']
+            self.global_step = checkpoint['global_step']
+            self.model.load_state_dict(checkpoint['model_state_dict'])
+            self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
+            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            if self.scheduler:
+                self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+            self.best_mean_dice = checkpoint['best_mean_dice']
+            print(f"Checkpoint loaded from {filename}")
+        else:
+            print(f"No checkpoint found at {filename}")
+
 
     def training_step(self, batch):
         image, label = self.get_input(batch)
@@ -218,6 +234,7 @@ if __name__ == "__main__":
 
     if args.resume:
         trainer.resume_checkpoint(args.checkpoint_dir)
+        print(f"Resume from {args.checkpoint_dir}")
 
 
     trainer.train(train_dataset=train_ds, val_dataset=val_ds)
