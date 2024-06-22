@@ -182,7 +182,7 @@ class BraTSTrainer(Trainer):
                                             f"best_model_{mean_dice:.4f}.pt"), 
                                             delete_symbol="best_model")
             
-            save_model(os.path.join(model_save_path, "best_model_checkpoint.pt"), 
+            save_model(os.path.join(model_save_path, f"best_model_checkpoint_{mean_dice:.4f}.pt"), 
                         self.epoch, self.global_step, self.model, self.optimizer, self.scheduler, self.best_mean_dice)
             
 
@@ -190,7 +190,7 @@ class BraTSTrainer(Trainer):
                                         os.path.join(model_save_path, 
                                         f"final_model_{mean_dice:.4f}.pt"), 
                                         delete_symbol="final_model")
-        save_model(os.path.join(model_save_path, "final_model_checkpoint.pt"), 
+        save_model(os.path.join(model_save_path, f"final_model_checkpoint_{mean_dice:.4f}.pt"), 
                     self.epoch, self.global_step, self.model, self.optimizer, self.scheduler, self.best_mean_dice)
         
 
