@@ -13,7 +13,7 @@ from unet.basic_unet import BasicUNetEncoder
 import argparse
 from monai.losses.dice import DiceLoss
 import yaml
-from guided_diffusion.gaussian_diffusion import get_named_beta_schedule, ModelMeanType, ModelVarType,LossType
+from guided_diffusion.gaussian_diffusion import get_named_beta_schedule, ModelMeanType, ModelVarType, LossType
 from guided_diffusion.respace import SpacedDiffusion, space_timesteps
 from guided_diffusion.resample import UniformSampler
 set_determinism(123)
@@ -30,8 +30,8 @@ env = "pytorch"
 max_epoch = 300
 batch_size = 1
 val_every = 10
-num_gpus = 1
-device = "cuda:0"
+num_gpus = 2
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
 number_modality = 4
 number_targets = 3 ## WT, TC, ET
@@ -42,7 +42,7 @@ class DiffUNet(nn.Module):
         self.embed_model = BasicUNetEncoder(3, number_modality, number_targets, [64, 64, 128, 256, 512, 64])
         # return 4 layers <=> 4 embeddings
         self.model = BasicUNetDe(3, number_modality + number_targets, number_targets, [64, 64, 128, 256, 512, 64], 
-                                act = ("LeakyReLU", {"negative_slope": 0.1, "inplace": False}))
+                                act=("LeakyReLU", {"negative_slope": 0.1, "inplace": False}))
    
         betas = get_named_beta_schedule("linear", 1000)
         self.diffusion = SpacedDiffusion(use_timesteps=space_timesteps(1000, [1000]),
@@ -60,7 +60,6 @@ class DiffUNet(nn.Module):
                                             )
         self.sampler = UniformSampler(1000)
 
-
     def forward(self, image=None, x=None, pred_type=None, step=None):
         if pred_type == "q_sample":
             noise = torch.randn_like(x).to(x.device)
@@ -73,7 +72,6 @@ class DiffUNet(nn.Module):
 
         elif pred_type == "ddim_sample":
             embeddings = self.embed_model(image)
-
             sample_out = self.sample_diffusion.ddim_sample_loop(self.model, (1, number_targets, 128, 128, 128), model_kwargs={"image": image, "embeddings": embeddings})
             sample_out = sample_out["pred_xstart"]
             return sample_out
@@ -81,22 +79,21 @@ class DiffUNet(nn.Module):
 class BraTSTrainer(Trainer):
     def __init__(self, env_type, max_epochs, batch_size, device="cpu", val_every=1, num_gpus=1, logdir="./logs/", master_ip='localhost', master_port=17750, training_script="train.py"):
         super().__init__(env_type, max_epochs, batch_size, device, val_every, num_gpus, logdir, master_ip, master_port, training_script)
-        self.window_infer = SlidingWindowInferer(roi_size=[128, 128, 128],
-                                        sw_batch_size=1,
-                                        overlap=0.25)
+        self.window_infer = SlidingWindowInferer(roi_size=[128, 128, 128], sw_batch_size=1, overlap=0.25)
         self.model = DiffUNet()
+        
+        if num_gpus > 1:
+            self.model = nn.DataParallel(self.model)
+
+        self.model.to(device)
 
         self.best_mean_dice = 0.0
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-4, weight_decay=1e-3)
         self.ce = nn.CrossEntropyLoss() 
         self.mse = nn.MSELoss()
-        self.scheduler = LinearWarmupCosineAnnealingLR(self.optimizer,
-                                                  warmup_epochs=30,
-                                                  max_epochs=max_epochs)
-
+        self.scheduler = LinearWarmupCosineAnnealingLR(self.optimizer, warmup_epochs=30, max_epochs=max_epochs)
         self.bce = nn.BCEWithLogitsLoss()
         self.dice_loss = DiceLoss(sigmoid=True)
-        
     
     def load_checkpoint(self, filename):
         if os.path.isfile(filename):
@@ -104,7 +101,7 @@ class BraTSTrainer(Trainer):
             self.epoch = checkpoint['epoch']
             self.global_step = checkpoint['global_step']
             self.model.load_state_dict(checkpoint['model_state_dict'])
-            self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
+            self.model.to(device)
             self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             if self.scheduler:
                 self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
@@ -113,9 +110,9 @@ class BraTSTrainer(Trainer):
         else:
             print(f"No checkpoint found at {filename}")
 
-
     def training_step(self, batch):
         image, label = self.get_input(batch)
+        image, label = image.to(device), label.to(device)
         x_start = label
 
         x_start = (x_start) * 2 - 1
@@ -142,12 +139,12 @@ class BraTSTrainer(Trainer):
         return image, label 
 
     def validation_step(self, batch):
-        image, label = self.get_input(batch)    
+        image, label = self.get_input(batch)
+        image, label = image.to(device), label.to(device)
         
         output = self.window_infer(image, self.model, pred_type="ddim_sample")
 
         output = torch.sigmoid(output)
-
         output = (output > 0.5).float().cpu().numpy()
 
         target = label.cpu().numpy()
@@ -171,7 +168,6 @@ class BraTSTrainer(Trainer):
         self.log("wt", wt, step=self.epoch)
         self.log("tc", tc, step=self.epoch)
         self.log("et", et, step=self.epoch)
-
         self.log("mean_dice", (wt+tc+et)/3, step=self.epoch)
 
         mean_dice = (wt + tc + et) / 3
@@ -192,15 +188,12 @@ class BraTSTrainer(Trainer):
                                         delete_symbol="final_model")
         save_model(os.path.join(model_save_path, f"final_model_checkpoint_{mean_dice:.4f}.pt"), 
                     self.epoch, self.global_step, self.model, self.optimizer, self.scheduler, self.best_mean_dice)
-        
-
 
         print(f"wt is {wt}, tc is {tc}, et is {et}, mean_dice is {mean_dice}")
     
     def resume_checkpoint(self, checkpoint_path):
         self.load_checkpoint(checkpoint_path)
         print(f"Resume from {checkpoint_path}")
-        
 
 if __name__ == "__main__":
 
@@ -250,6 +243,5 @@ if __name__ == "__main__":
     if args.resume:
         trainer.resume_checkpoint(args.checkpoint_dir)
         print(f"Resume from {args.checkpoint_dir}")
-
 
     trainer.train(train_dataset=train_ds, val_dataset=val_ds)
