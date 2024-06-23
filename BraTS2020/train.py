@@ -204,23 +204,35 @@ class BraTSTrainer(Trainer):
 
 if __name__ == "__main__":
 
-    # create parser with two arguments --resume and --checkpoint_dir
+    # Predefine default values
+    default_batch_size = 1
+    default_max_epoch = 100
+    default_num_gpus = 2
+    default_val_every = 10
+    default_logdir = "/kaggle/working/DiffAttentionUnet/BraTS2020/logs"
+    default_data_dir = "/kaggle/input/brats20-dataset-training-validation/BraTS2020_TrainingData/MICCAI_BraTS2020_TrainingData"
+    default_env = "DDP"
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--checkpoint_dir", type=str)
-    # parse the batch_size and max_epoch
-    parser.add_argument("--batch_size", type=int, default=batch_size)
-    parser.add_argument("--max_epoch", type=int, default=max_epoch)
-    parser.add_argument("--num_gpus", type=int, default=num_gpus)
-    parser.add_argument("--val_every", type=int, default=val_every)
-    parser.add_argument("--logdir", type=str, default=logdir)
-    parser.add_argument("--data_dir", type=str, default=data_dir)
-    parser.add_argument("--env", type=str, default=env)
-    
+    parser.add_argument("--batch_size", type=int, default=default_batch_size)
+    parser.add_argument("--max_epoch", type=int, default=default_max_epoch)
+    parser.add_argument("--num_gpus", type=int, default=default_num_gpus)
+    parser.add_argument("--val_every", type=int, default=default_val_every)
+    parser.add_argument("--logdir", type=str, default=default_logdir)
+    parser.add_argument("--data_dir", type=str, default=default_data_dir)
+    parser.add_argument("--env", type=str, default=default_env)
+
     args = parser.parse_args()
+
+    # Update variables with the values from the command line
     batch_size = args.batch_size
     max_epoch = args.max_epoch
     num_gpus = args.num_gpus
+    val_every = args.val_every
+    logdir = args.logdir
+    data_dir = args.data_dir
     env = args.env
 
     train_ds, val_ds, test_ds = get_loader_brats(data_dir=data_dir, batch_size=batch_size, fold=0)
