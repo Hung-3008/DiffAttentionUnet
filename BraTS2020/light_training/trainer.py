@@ -157,7 +157,7 @@ class Trainer:
             else:
                 self.writer = None
             if self.model is not None:
-                self.model.cuda(self.local_rank)
+                self.model.to(self.device)
                 self.model = torch.nn.parallel.DistributedDataParallel(self.model, device_ids=[self.local_rank], output_device=self.local_rank, find_unused_parameters=True)
         else:
             print("not support env_type")

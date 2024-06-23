@@ -228,6 +228,8 @@ if __name__ == "__main__":
     data_dir = args.data_dir
     env = args.env
 
+    device = f'cuda:{int(os.getenv("LOCAL_RANK", 0))}' if torch.cuda.is_available() else 'cpu'
+
     train_ds, val_ds, test_ds = get_loader_brats(data_dir=data_dir, batch_size=batch_size, fold=0)
 
     trainer = BraTSTrainer(env_type=env,
