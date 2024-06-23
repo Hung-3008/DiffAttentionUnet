@@ -219,6 +219,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     batch_size = args.batch_size
     max_epoch = args.max_epoch
+    num_gpus = args.num_gpus
 
     train_ds, val_ds, test_ds = get_loader_brats(data_dir=data_dir, batch_size=batch_size, fold=0)
 
