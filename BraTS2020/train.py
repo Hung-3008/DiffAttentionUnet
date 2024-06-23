@@ -247,4 +247,3 @@ if __name__ == "__main__":
         print(f"Resume from {args.checkpoint_dir}")
 
     trainer.train(train_dataset=train_ds, val_dataset=val_ds)
-
