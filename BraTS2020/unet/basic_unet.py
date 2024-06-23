@@ -260,7 +260,7 @@ class BasicUNetEncoder(nn.Module):
         self.down_3 = Down(spatial_dims, fea[2], fea[3], act, norm, bias, dropout)
         self.attn_3 = self.select_layers(fea[3])
         self.down_4 = Down(spatial_dims, fea[3], fea[4], act, norm, bias, dropout)
-        self.attn_4 = self.select_layers(fea[4])
+        #self.attn_4 = self.select_layers(fea[4])
 
     def select_layers(self, out_c):
         if out_c < 128:
