@@ -7,7 +7,6 @@ import torch.nn.parallel
 import torch.utils.data.distributed
 from monai.data import DataLoader
 import argparse
-from .launch import launch_dist
 from monai.utils import set_determinism
 from .sampler import SequentialDistributedSampler, distributed_concat
 from torch.utils.tensorboard import SummaryWriter
@@ -24,7 +23,6 @@ class Trainer:
         self.rank = 0
         self.local_rank = 0
         self.batch_size = batch_size
-        self.not_call_launch = True
         self.logdir = logdir
         self.scheduler = None 
         self.model = None
@@ -40,16 +38,7 @@ class Trainer:
 
         if env_type.lower() == "ddp":
             self.ddp = True
-            self.get_dist_args()
-            if not self.not_call_launch:
-                launch_dist(env_type=env_type,
-                            num_nodes=1,
-                            gpus_per_node=num_gpus,
-                            master_addr=master_ip,
-                            master_port=master_port,
-                            training_script=training_script,
-                            )
-                os._exit(1)
+            self.local_rank = int(os.getenv('LOCAL_RANK', 0))
             self.initialize_distributed()
 
     def save_checkpoint(self, filename):
@@ -69,7 +58,7 @@ class Trainer:
         if self.env_type == 'pytorch':
             self.print_rank_0('No need to initialize')
             return
-        if self.env_type.lower() == 'ddp' or "deepspeed" in self.env_type.lower():
+        if self.env_type.lower() == 'ddp':
             torch.cuda.set_device(self.local_rank)
             torch.distributed.init_process_group(backend='nccl', init_method='env://')
             self.world_size = torch.distributed.get_world_size()
@@ -86,16 +75,6 @@ class Trainer:
             else:
                 sampler = torch.utils.data.distributed.DistributedSampler(dataset, shuffle=True)
             return DataLoader(dataset, batch_size=batch_size, num_workers=12, sampler=sampler, drop_last=False)
-
-    def get_dist_args(self):
-        parser = argparse.ArgumentParser()
-        parser.add_argument('--local_rank', type=int, default=0, help="local_rank")
-        parser.add_argument('--not_call_launch', action='store_true', help="not call launch!")
-        ds_args = parser.parse_args()
-        self.rank = int(os.environ.get('RANK', 0))
-        self.local_rank = ds_args.local_rank
-        self.not_call_launch = ds_args.not_call_launch
-        self.device = f'cuda:{self.local_rank}' if torch.cuda.is_available() else 'cpu'
 
     def validation_single_gpu(self, val_dataset):
         if self.ddp:
