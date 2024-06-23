@@ -215,11 +215,13 @@ if __name__ == "__main__":
     parser.add_argument("--val_every", type=int, default=val_every)
     parser.add_argument("--logdir", type=str, default=logdir)
     parser.add_argument("--data_dir", type=str, default=data_dir)
+    parser.add_argument("--env", type=str, default=env)
     
     args = parser.parse_args()
     batch_size = args.batch_size
     max_epoch = args.max_epoch
     num_gpus = args.num_gpus
+    env = args.env
 
     train_ds, val_ds, test_ds = get_loader_brats(data_dir=data_dir, batch_size=batch_size, fold=0)
 
