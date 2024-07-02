@@ -6,19 +6,22 @@ from monai.inferers import SlidingWindowInferer
 from light_training.evaluation.metric import dice
 from light_training.trainer import Trainer
 from monai.utils import set_determinism
-from light_training.evaluation.metric import dice, hausdorff_distance_95, recall, fscore
+from light_training.utils.lr_scheduler import LinearWarmupCosineAnnealingLR
+from light_training.utils.files_helper import save_new_model_and_delete_last, save_model
+from unet.basic_unet_denose import BasicUNetDe
+from unet.basic_unet import BasicUNetEncoder
 import argparse
-import yaml 
+from monai.losses.dice import DiceLoss
+import yaml
 from guided_diffusion.gaussian_diffusion import get_named_beta_schedule, ModelMeanType, ModelVarType,LossType
 from guided_diffusion.respace import SpacedDiffusion, space_timesteps
 from guided_diffusion.resample import UniformSampler
-from unet.basic_unet_denose import BasicUNetDe
-from unet.basic_unet import BasicUNetEncoder
+import os
 
 set_determinism(123)
 import os
 
-data_dir = "./datasets/brats2020/MICCAI_BraTS2020_TrainingData/"
+data_dir = "/kaggle/input/brats20-dataset-training-validation/BraTS2020_TrainingData/MICCAI_BraTS2020_TrainingData"
 
 max_epoch = 300
 batch_size = 2
@@ -39,10 +42,10 @@ class DiffUNet(nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.embed_model = BasicUNetEncoder(3, number_modality, number_targets, [64, 64, 128, 256, 512, 64])
-
+        # return 4 layers <=> 4 embeddings
         self.model = BasicUNetDe(3, number_modality + number_targets, number_targets, [64, 64, 128, 256, 512, 64], 
                                 act = ("LeakyReLU", {"negative_slope": 0.1, "inplace": False}))
-        
+   
         betas = get_named_beta_schedule("linear", 1000)
         self.diffusion = SpacedDiffusion(use_timesteps=space_timesteps(1000, [1000]),
                                             betas=betas,
@@ -51,7 +54,7 @@ class DiffUNet(nn.Module):
                                             loss_type=LossType.MSE,
                                             )
 
-        self.sample_diffusion = SpacedDiffusion(use_timesteps=space_timesteps(1000, [10]),
+        self.sample_diffusion = SpacedDiffusion(use_timesteps=space_timesteps(1000, [50]),
                                             betas=betas,
                                             model_mean_type=ModelMeanType.START_X,
                                             model_var_type=ModelVarType.FIXED_LARGE,
@@ -59,7 +62,8 @@ class DiffUNet(nn.Module):
                                             )
         self.sampler = UniformSampler(1000)
 
-    def forward(self, image=None, x=None, pred_type=None, step=None, embedding=None):
+
+    def forward(self, image=None, x=None, pred_type=None, step=None):
         if pred_type == "q_sample":
             noise = torch.randn_like(x).to(x.device)
             t, weight = self.sampler.sample(x.shape[0], x.device)
@@ -67,42 +71,71 @@ class DiffUNet(nn.Module):
 
         elif pred_type == "denoise":
             embeddings = self.embed_model(image)
-            return self.model(x, t=step, image=image, embedding=embedding)
+            return self.model(x, t=step, image=image, embeddings=embeddings)
 
         elif pred_type == "ddim_sample":
             embeddings = self.embed_model(image)
 
-            uncer_step = 4
-            sample_outputs = []
-            for i in range(uncer_step):
-                sample_outputs.append(self.sample_diffusion.ddim_sample_loop(self.model, (1, number_targets, 96, 96, 96), model_kwargs={"image": image, "embeddings": embeddings}))
-
-            sample_return = torch.zeros((1, number_targets, 96, 96, 96))
-
-            for index in range(10):
-# 
-                uncer_out = 0
-                for i in range(uncer_step):
-                    uncer_out += sample_outputs[i]["all_model_outputs"][index]
-                uncer_out = uncer_out / uncer_step
-                uncer = compute_uncer(uncer_out).cpu()
-
-                w = torch.exp(torch.sigmoid(torch.tensor((index + 1) / 10)) * (1 - uncer))
-              
-                for i in range(uncer_step):
-                    sample_return += w * sample_outputs[i]["all_samples"][index].cpu()
-
-            return sample_return
+            sample_out = self.sample_diffusion.ddim_sample_loop(self.model, (1, number_targets, 128, 128, 128), model_kwargs={"image": image, "embeddings": embeddings})
+            sample_out = sample_out["pred_xstart"]
+            return sample_out
 
 class BraTSTrainer(Trainer):
     def __init__(self, env_type, max_epochs, batch_size, device="cpu", val_every=1, num_gpus=1, logdir="./logs/", master_ip='localhost', master_port=17750, training_script="train.py"):
         super().__init__(env_type, max_epochs, batch_size, device, val_every, num_gpus, logdir, master_ip, master_port, training_script)
-        self.window_infer = SlidingWindowInferer(roi_size=[96, 96, 96],
+        self.window_infer = SlidingWindowInferer(roi_size=[128, 128, 128],
                                         sw_batch_size=1,
-                                        overlap=0.5)
-        
+                                        overlap=0.25)
         self.model = DiffUNet()
 
+        self.best_mean_dice = 0.0
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-4, weight_decay=1e-3)
+        self.ce = nn.CrossEntropyLoss() 
+        self.mse = nn.MSELoss()
+        self.scheduler = LinearWarmupCosineAnnealingLR(self.optimizer,
+                                                  warmup_epochs=30,
+                                                  max_epochs=max_epochs)
+
+        self.bce = nn.BCEWithLogitsLoss()
+        self.dice_loss = DiceLoss(sigmoid=True)
+        
+    
+    def load_checkpoint(self, filename):
+        if os.path.isfile(filename):
+            checkpoint = torch.load(filename)
+            self.epoch = checkpoint['epoch']
+            self.global_step = checkpoint['global_step']
+            self.model.load_state_dict(checkpoint['model_state_dict'])
+            self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
+            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            if self.scheduler:
+                self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+            self.best_mean_dice = checkpoint['best_mean_dice']
+            print(f"Checkpoint loaded from {filename}")
+        else:
+            print(f"No checkpoint found at {filename}")
+
+
+    def training_step(self, batch):
+        image, label = self.get_input(batch)
+        x_start = label
+
+        x_start = (x_start) * 2 - 1
+        x_t, t, noise = self.model(x=x_start, pred_type="q_sample")
+        pred_xstart = self.model(x=x_t, step=t, image=image, pred_type="denoise")
+
+        loss_dice = self.dice_loss(pred_xstart, label)
+        loss_bce = self.bce(pred_xstart, label)
+
+        pred_xstart = torch.sigmoid(pred_xstart)
+        loss_mse = self.mse(pred_xstart, label)
+
+        loss = loss_dice + loss_bce + loss_mse
+
+        self.log("train_loss", loss, step=self.global_step)
+
+        return loss 
+ 
     def get_input(self, batch):
         image = batch["image"]
         label = batch["label"]
@@ -111,9 +144,10 @@ class BraTSTrainer(Trainer):
         return image, label 
 
     def validation_step(self, batch):
-        image, label = self.get_input(batch)
-       
+        image, label = self.get_input(batch)    
+        
         output = self.window_infer(image, self.model, pred_type="ddim_sample")
+
         output = torch.sigmoid(output)
 
         output = (output > 0.5).float().cpu().numpy()
@@ -122,26 +156,52 @@ class BraTSTrainer(Trainer):
         o = output[:, 1]
         t = target[:, 1] # ce
         wt = dice(o, t)
-        wt_hd = hausdorff_distance_95(o, t)
-        wt_recall = recall(o, t)
-
         # core
         o = output[:, 0]
         t = target[:, 0]
         tc = dice(o, t)
-        tc_hd = hausdorff_distance_95(o, t)
-        tc_recall = recall(o, t)
-
         # active
         o = output[:, 2]
         t = target[:, 2]
-       
         et = dice(o, t)
-        et_hd = hausdorff_distance_95(o, t)
-        et_recall = recall(o, t)
+        
+        return [wt, tc, et], output, target
 
-        print(f"wt is {wt}, tc is {tc}, et is {et}")
-        return [wt, tc, et, wt_hd, tc_hd, et_hd, wt_recall, tc_recall, et_recall]
+    def validation_end(self, mean_val_outputs):
+        wt, tc, et = mean_val_outputs
+
+        self.log("wt", wt, step=self.epoch)
+        self.log("tc", tc, step=self.epoch)
+        self.log("et", et, step=self.epoch)
+
+        self.log("mean_dice", (wt+tc+et)/3, step=self.epoch)
+
+        mean_dice = (wt + tc + et) / 3
+        if mean_dice > self.best_mean_dice:
+            self.best_mean_dice = mean_dice
+            save_new_model_and_delete_last(self.model, 
+                                            os.path.join(model_save_path, 
+                                            f"best_model_{mean_dice:.4f}.pt"), 
+                                            delete_symbol="best_model")
+            
+            save_model(os.path.join(model_save_path, f"best_model_checkpoint_{mean_dice:.4f}.pt"), 
+                        self.epoch, self.global_step, self.model, self.optimizer, self.scheduler, self.best_mean_dice)
+            
+
+        save_new_model_and_delete_last(self.model, 
+                                        os.path.join(model_save_path, 
+                                        f"final_model_{mean_dice:.4f}.pt"), 
+                                        delete_symbol="final_model")
+        save_model(os.path.join(model_save_path, f"final_model_checkpoint_{mean_dice:.4f}.pt"), 
+                    self.epoch, self.global_step, self.model, self.optimizer, self.scheduler, self.best_mean_dice)
+        
+
+
+        print(f"wt is {wt}, tc is {tc}, et is {et}, mean_dice is {mean_dice}")
+    
+    def resume_checkpoint(self, checkpoint_path):
+        self.load_checkpoint(checkpoint_path)
+        print(f"Resume from {checkpoint_path}")
 
 if __name__ == "__main__":
 
@@ -156,8 +216,23 @@ if __name__ == "__main__":
                                     master_port=17751,
                                     training_script=__file__)
 
-    logdir = "./logs_brats/diffusion_seg_all_loss_embed/model/final_model_0.8696.pt"
-    trainer.load_state_dict(logdir)
-    v_mean, _ = trainer.validation_single_gpu(val_dataset=test_ds)
+    logdir = "/kaggle/input/dump-files/best_model_checkpoint_0.8405.pt"
+    train_ds, val_ds, test_ds = get_loader_brats(data_dir=data_dir, batch_size=batch_size, fold=0)
 
+    trainer = BraTSTrainer(env_type="pytorch",
+                                max_epochs=max_epoch,
+                                batch_size=batch_size,
+                                device=device,
+                                logdir=logdir,
+                                val_every=val_every,
+                                num_gpus=1,
+                                master_port=17751,
+                                training_script=__file__)
+
+    
+    trainer.resume_checkpoint(logdir)
+
+
+
+    v_mean, _ = trainer.validation_single_gpu(val_dataset=test_ds)
     print(f"v_mean is {v_mean}")

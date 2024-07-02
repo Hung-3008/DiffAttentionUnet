@@ -160,6 +160,9 @@ class Trainer:
         val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False)
         self.model.to(self.device)
         val_outputs = []
+        output_list = []
+        target_list = []
+
         self.model.eval()
         for idx, batch in tqdm(enumerate(val_loader), total=len(val_loader)):
             if isinstance(batch, dict):
@@ -178,11 +181,15 @@ class Trainer:
                 exit(0)
 
             with torch.no_grad():
-                val_out = self.validation_step(batch)
+                val_out, output, target = self.validation_step(batch)
                 assert val_out is not None 
 
             return_list = False
             val_outputs.append(val_out)
+            output_list.append(output)
+            target_list.append(target)
+
+
         if isinstance(val_out, list) or isinstance(val_out, tuple):
             return_list = True
 
@@ -216,7 +223,7 @@ class Trainer:
                     v_sum[i] = 0
                 else :
                     v_sum[i] = v_sum[i] / length[i]
-        return v_sum, val_outputs
+        return v_sum, val_outputs, output_list, target_list
 
     def train(self,
                 train_dataset,
