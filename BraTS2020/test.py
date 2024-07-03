@@ -145,16 +145,17 @@ class BraTSTrainer(Trainer):
 
     def validation_step(self, batch):
         image, label = self.get_input(batch)    
-        
         output = self.window_infer(image, self.model, pred_type="ddim_sample")
+        tp_output = output
+        tp_label = label
+        tp_image = image
 
         output = torch.sigmoid(output)
-
         output = (output > 0.5).float().cpu().numpy()
 
         target = label.cpu().numpy()
         o = output[:, 1]
-        t = target[:, 1] # ce
+        t = target[:, 1]
         wt = dice(o, t)
         # core
         o = output[:, 0]
@@ -165,7 +166,7 @@ class BraTSTrainer(Trainer):
         t = target[:, 2]
         et = dice(o, t)
         
-        return [wt, tc, et], output, target
+        return [wt, tc, et], tp_output, tp_label, tp_image
 
     def validation_end(self, mean_val_outputs):
         wt, tc, et = mean_val_outputs

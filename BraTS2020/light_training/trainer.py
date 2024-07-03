@@ -162,6 +162,7 @@ class Trainer:
         val_outputs = []
         output_list = []
         target_list = []
+        img_list = []
 
         self.model.eval()
         for idx, batch in tqdm(enumerate(val_loader), total=len(val_loader)):
@@ -181,14 +182,14 @@ class Trainer:
                 exit(0)
 
             with torch.no_grad():
-                val_out, output, target = self.validation_step(batch)
+                val_out, output, target, img = self.validation_step(batch)
                 assert val_out is not None 
 
             return_list = False
             val_outputs.append(val_out)
             output_list.append(output)
             target_list.append(target)
-
+            img_list.append(img)
 
         if isinstance(val_out, list) or isinstance(val_out, tuple):
             return_list = True
@@ -223,7 +224,7 @@ class Trainer:
                     v_sum[i] = 0
                 else :
                     v_sum[i] = v_sum[i] / length[i]
-        return v_sum, val_outputs, output_list, target_list
+        return v_sum, val_outputs, output_list, target_list, img_list
 
     def train(self,
                 train_dataset,
