@@ -7,7 +7,7 @@ from light_training.evaluation.metric import dice
 from light_training.trainer import Trainer
 from monai.utils import set_determinism
 from light_training.utils.lr_scheduler import LinearWarmupCosineAnnealingLR
-from light_training.utils.files_helper import save_new_model_and_delete_last
+from light_training.utils.files_helper import save_new_model_and_delete_last, save_model
 from unet.basic_unet_denose import BasicUNetDe
 from unet.basic_unet import BasicUNetEncoder
 import argparse
@@ -40,7 +40,7 @@ class DiffUNet(nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.embed_model = BasicUNetEncoder(3, number_modality, number_targets, [64, 64, 128, 256, 512, 64])
-
+        # return 4 layers <=> 4 embeddings
         self.model = BasicUNetDe(3, number_modality + number_targets, number_targets, [64, 64, 128, 256, 512, 64], 
                                 act = ("LeakyReLU", {"negative_slope": 0.1, "inplace": False}))
    
@@ -74,14 +74,14 @@ class DiffUNet(nn.Module):
         elif pred_type == "ddim_sample":
             embeddings = self.embed_model(image)
 
-            sample_out = self.sample_diffusion.ddim_sample_loop(self.model, (1, number_targets, 96, 96, 96), model_kwargs={"image": image, "embeddings": embeddings})
+            sample_out = self.sample_diffusion.ddim_sample_loop(self.model, (1, number_targets, 128, 128, 128), model_kwargs={"image": image, "embeddings": embeddings})
             sample_out = sample_out["pred_xstart"]
             return sample_out
 
 class BraTSTrainer(Trainer):
     def __init__(self, env_type, max_epochs, batch_size, device="cpu", val_every=1, num_gpus=1, logdir="./logs/", master_ip='localhost', master_port=17750, training_script="train.py"):
         super().__init__(env_type, max_epochs, batch_size, device, val_every, num_gpus, logdir, master_ip, master_port, training_script)
-        self.window_infer = SlidingWindowInferer(roi_size=[96, 96, 96],
+        self.window_infer = SlidingWindowInferer(roi_size=[128, 128, 128],
                                         sw_batch_size=1,
                                         overlap=0.25)
         self.model = DiffUNet()
@@ -96,6 +96,23 @@ class BraTSTrainer(Trainer):
 
         self.bce = nn.BCEWithLogitsLoss()
         self.dice_loss = DiceLoss(sigmoid=True)
+        
+    
+    def load_checkpoint(self, filename):
+        if os.path.isfile(filename):
+            checkpoint = torch.load(filename)
+            self.epoch = checkpoint['epoch']
+            self.global_step = checkpoint['global_step']
+            self.model.load_state_dict(checkpoint['model_state_dict'])
+            self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
+            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            if self.scheduler:
+                self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+            self.best_mean_dice = checkpoint['best_mean_dice']
+            print(f"Checkpoint loaded from {filename}")
+        else:
+            print(f"No checkpoint found at {filename}")
+
 
     def training_step(self, batch):
         image, label = self.get_input(batch)
@@ -164,23 +181,46 @@ class BraTSTrainer(Trainer):
                                             os.path.join(model_save_path, 
                                             f"best_model_{mean_dice:.4f}.pt"), 
                                             delete_symbol="best_model")
+            
+            save_model(os.path.join(model_save_path, f"best_model_checkpoint_{mean_dice:.4f}.pt"), 
+                        self.epoch, self.global_step, self.model, self.optimizer, self.scheduler, self.best_mean_dice)
+            
 
         save_new_model_and_delete_last(self.model, 
                                         os.path.join(model_save_path, 
                                         f"final_model_{mean_dice:.4f}.pt"), 
                                         delete_symbol="final_model")
+        save_model(os.path.join(model_save_path, f"final_model_checkpoint_{mean_dice:.4f}.pt"), 
+                    self.epoch, self.global_step, self.model, self.optimizer, self.scheduler, self.best_mean_dice)
+        
+
 
         print(f"wt is {wt}, tc is {tc}, et is {et}, mean_dice is {mean_dice}")
+    
+    def resume_checkpoint(self, checkpoint_path):
+        self.load_checkpoint(checkpoint_path)
+        print(f"Resume from {checkpoint_path}")
+        
 
 if __name__ == "__main__":
 
-    train_ds, val_ds, test_ds = get_loader_brats(data_dir=data_dir, batch_size=batch_size, fold=0)
     # create parser with two arguments --resume and --checkpoint_dir
     parser = argparse.ArgumentParser()
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--checkpoint_dir", type=str)
-
+    # parse the batch_size and max_epoch
+    parser.add_argument("--batch_size", type=int, default=batch_size)
+    parser.add_argument("--max_epoch", type=int, default=max_epoch)
+    parser.add_argument("--num_gpus", type=int, default=num_gpus)
+    parser.add_argument("--val_every", type=int, default=val_every)
+    parser.add_argument("--logdir", type=str, default=logdir)
+    parser.add_argument("--data_dir", type=str, default=data_dir)
+    
     args = parser.parse_args()
+    batch_size = args.batch_size
+    max_epoch = args.max_epoch
+
+    train_ds, val_ds, test_ds = get_loader_brats(data_dir=data_dir, batch_size=batch_size, fold=0)
 
     trainer = BraTSTrainer(env_type=env,
                                 max_epochs=max_epoch,
@@ -193,9 +233,8 @@ if __name__ == "__main__":
                                 training_script=__file__)
 
     if args.resume:
-        checkpoint = os.path.join(args.checkpoint_dir)
-        trainer.load_state_dict(checkpoint)
-        print(f"Resume from {checkpoint}")
+        trainer.resume_checkpoint(args.checkpoint_dir)
+        print(f"Resume from {args.checkpoint_dir}")
 
 
     trainer.train(train_dataset=train_ds, val_dataset=val_ds)

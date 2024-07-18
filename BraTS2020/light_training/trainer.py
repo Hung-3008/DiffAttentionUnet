@@ -45,7 +45,7 @@ class Trainer:
         self.max_epochs = max_epochs
         self.ddp = False
         self.num_gpus = num_gpus
-        self.device = device
+        self.device = 'cuda:0'
         self.rank = 0
         self.local_rank = 0
         self.batch_size = batch_size
@@ -77,7 +77,20 @@ class Trainer:
                 os._exit(1)
             self.initialize_distributed()
 
+    def save_checkpoint(self, filename):
+        checkpoint = {
+            'epoch': self.epoch,
+            'global_step': self.global_step,
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'scheduler_state_dict': self.scheduler.state_dict() if self.scheduler else None,
+            'best_mean_dice': self.best_mean_dice
+        }
+        torch.save(checkpoint, filename)
+        print(f"Checkpoint saved to {filename}")
 
+    
+            
     def initialize_distributed(self):
         """Initialize torch.distributed."""
         if self.env_type == 'pytorch':
@@ -110,7 +123,7 @@ class Trainer:
             return DataLoader(dataset,
                                 batch_size=batch_size,
                                 shuffle=shuffle,
-                                num_workers=4)
+                                num_workers=12)
         else :
             if not train:
                 sampler = SequentialDistributedSampler(dataset, batch_size=batch_size)
@@ -119,7 +132,7 @@ class Trainer:
                 sampler = torch.utils.data.distributed.DistributedSampler(dataset, shuffle=True)
             return DataLoader(dataset,
                                 batch_size=batch_size,
-                                num_workers=4,
+                                num_workers=12, 
                                 sampler=sampler, 
                                 drop_last=False)
 
@@ -446,4 +459,3 @@ class Trainer:
         self.model.load_state_dict(new_sd, strict=strict)
         
         print(f"model parameters are loaded successed.")
-

@@ -229,6 +229,8 @@ class LinearAttention3D(nn.Module):
         out = out.reshape(b, -1, d, h, w)
         return self.to_out(out)
 
+
+from .dual_domain_net import DualDomainNet
 class BasicUNetEncoder(nn.Module):
     def __init__(
         self,
@@ -252,23 +254,44 @@ class BasicUNetEncoder(nn.Module):
 
         self.conv_0 = TwoConv(spatial_dims, in_channels, features[0], act, norm, bias, dropout)
         self.down_1 = Down(spatial_dims, fea[0], fea[1], act, norm, bias, dropout)
-        self.attn_1 = LinearAttention3D(fea[1])
+        self.attn_1 = self.select_layers(fea[1])
         self.down_2 = Down(spatial_dims, fea[1], fea[2], act, norm, bias, dropout)
-        self.attn_2 = LinearAttention3D(fea[2])
+        self.attn_2 = self.select_layers(fea[2])
         self.down_3 = Down(spatial_dims, fea[2], fea[3], act, norm, bias, dropout)
-        self.attn_3 = LinearAttention3D(fea[3])
+        self.attn_3 = self.select_layers(fea[3])
         self.down_4 = Down(spatial_dims, fea[3], fea[4], act, norm, bias, dropout)
-        self.attn_4 = LinearAttention3D(fea[4])
+        self.attn_4 = self.select_layers(fea[4])
+
+    def select_layers(self, out_c):
+        if out_c < 128:
+            layer = DualDomainNet(out_c, out_c)
+        elif out_c < 256:
+            layer = DualDomainNet(out_c,out_c,skip=1)
+        elif out_c < 320:
+            layer = DualDomainNet(out_c, out_c,skip=2)
+        else:
+            layer = DualDomainNet(out_c, out_c,skip=3)
+        return layer
+    
 
     def forward(self, x: torch.Tensor):
         x0 = self.conv_0(x)
+        #print(f"x0: {x0.shape}")
         x1 = self.down_1(x0)
+        #print(f"x1: {x1.shape}")
         x1 = self.attn_1(x1)
+        #print(f"x1 attn: {x1.shape}")
         x2 = self.down_2(x1)
+        #print(f"x2: {x2.shape}")
         x2 = self.attn_2(x2)
+        #print(f"x2 attn: {x2.shape}")
         x3 = self.down_3(x2)
+        #print(f"x3: {x3.shape}")
         x3 = self.attn_3(x3)
+        #print(f"x3 attn: {x3.shape}")
         x4 = self.down_4(x3)
-        x4 = self.attn_4(x4)
+        #print(f"x4: {x4.shape}")
+        #x4 = self.attn_4(x4)
+        #print(f"x4 attn: {x4.shape}")
 
         return [x0, x1, x2, x3, x4]

@@ -19,6 +19,17 @@ from monai import transforms, data
 import SimpleITK as sitk
 from tqdm import tqdm 
 from torch.utils.data import Dataset 
+import re
+
+
+def sort_paths(paths):
+    # This function extracts the numerical part of the path and uses it for sorting
+    def extract_number(path):
+        match = re.search(r'(\d+)$', path)
+        return int(match.group(1)) if match else 0
+    
+    return sorted(paths, key=extract_number)
+
 
 def resample_img(
     image: sitk.Image,
@@ -68,6 +79,9 @@ def resample_img(
     image = resample.Execute(image)
 
     return image
+
+
+
 
 class PretrainDataset(Dataset):
     def __init__(self, datalist, transform=None, cache=False) -> None:
@@ -148,6 +162,7 @@ def get_loader_brats(data_dir, batch_size=1, fold=0, num_workers=4):
 
     all_dirs = os.listdir(data_dir)
     all_paths = [os.path.join(data_dir, d) for d in all_dirs]
+    all_paths = sort_paths(all_paths)
     import random
     random.shuffle(all_paths)
     size = len(all_paths)
@@ -163,9 +178,9 @@ def get_loader_brats(data_dir, batch_size=1, fold=0, num_workers=4):
             transforms.ConvertToMultiChannelBasedOnBratsClassesD(keys=["label"]),
             transforms.CropForegroundd(keys=["image", "label"], source_key="image"),
 
-            transforms.RandSpatialCropd(keys=["image", "label"], roi_size=[96, 96, 96],
+            transforms.RandSpatialCropd(keys=["image", "label"], roi_size=[128, 128, 128],
                                         random_size=False),
-            transforms.SpatialPadd(keys=["image", "label"], spatial_size=(96, 96, 96)),
+            transforms.SpatialPadd(keys=["image", "label"], spatial_size=(128, 128, 128)),
             transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=0),
             transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=1),
             transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=2),
